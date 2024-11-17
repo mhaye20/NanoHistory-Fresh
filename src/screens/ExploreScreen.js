@@ -262,11 +262,13 @@ const ExploreScreen = ({ navigation }) => {
   ];
 
   useEffect(() => {
+    console.log('ExploreScreen mounted');
     checkLocationPermission();
     loadUserPoints();
   }, []);
 
   useEffect(() => {
+    console.log('Permission status changed:', permissionStatus);
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
       fetchNearbyLocations(permissionStatus === 'denied');
     }
@@ -279,11 +281,15 @@ const ExploreScreen = ({ navigation }) => {
 
   const checkLocationPermission = async () => {
     try {
+      console.log('Checking location permission...');
       const { status } = await Location.getForegroundPermissionsAsync();
+      console.log('Initial permission status:', status);
       setPermissionStatus(status);
       
       if (status !== 'granted') {
+        console.log('Requesting location permission...');
         const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+        console.log('New permission status:', newStatus);
         setPermissionStatus(newStatus);
       }
     } catch (err) {
@@ -324,29 +330,39 @@ const ExploreScreen = ({ navigation }) => {
 
   const fetchNearbyLocations = async (skipLocation = false) => {
     try {
+      console.log('Fetching nearby locations, skipLocation:', skipLocation);
       setRefreshing(true);
       let locationData = null;
 
       if (!skipLocation && permissionStatus === 'granted') {
+        console.log('Getting current position...');
         locationData = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
+        console.log('Current position:', locationData);
       }
 
       let nearbyLocations;
       if (locationData) {
+        console.log('Fetching locations with coordinates:', {
+          lat: locationData.coords.latitude,
+          lng: locationData.coords.longitude
+        });
         nearbyLocations = await getNearbyLocations(
           locationData.coords.latitude,
           locationData.coords.longitude,
           selectedFilter
         );
       } else {
+        console.log('Fetching locations without coordinates');
         nearbyLocations = await getNearbyLocations(
           null,
           null,
           selectedFilter
         );
       }
+
+      console.log('Fetched locations:', nearbyLocations);
 
       // Enhance locations with AI-generated content
       nearbyLocations = await Promise.all(
@@ -367,6 +383,7 @@ const ExploreScreen = ({ navigation }) => {
         })
       );
 
+      console.log('Setting locations with AI stories:', nearbyLocations);
       setLocations(nearbyLocations);
       setError(null);
     } catch (err) {
