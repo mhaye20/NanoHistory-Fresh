@@ -1,33 +1,69 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Animated,
+  Platform,
+  Vibration,
+} from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
+import { GLView } from 'expo-gl';
+import { Accelerometer } from 'expo-sensors';
 import { generateARContent } from '../services/ai';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const ARViewScreen = ({ route, navigation }) => {
-  const { location } = route.params || {};
+  const { location, userContext } = route.params || {};
   const [hasPermission, setHasPermission] = useState(null);
   const [arContent, setArContent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activePoint, setActivePoint] = useState(null);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [deviceOrientation, setDeviceOrientation] = useState({ x: 0, y: 0, z: 0 });
+  
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const soundObjects = useRef({}).current;
+  const subscription = useRef(null);
 
   useEffect(() => {
-    requestPermissions();
-    if (location) {
-      fetchARContent();
-    }
+    setupAR();
+    return () => cleanup();
   }, []);
+
+  const setupAR = async () => {
+    try {
+      await requestPermissions();
+      if (location) {
+        await Promise.all([
+          fetchARContent(),
+          setupAccelerometer(),
+          setupAudio(),
+        ]);
+      }
+    } catch (err) {
+      console.error('Error setting up AR:', err);
+      setError('Failed to initialize AR experience');
+      setLoading(false);
+    }
+  };
 
   const requestPermissions = async () => {
     try {
-      const [cameraPermission, locationPermission] = await Promise.all([
+      const [cameraPermission, locationPermission, audioPermission] = await Promise.all([
         Camera.requestCameraPermissionsAsync(),
         Location.requestForegroundPermissionsAsync(),
+        Audio.requestPermissionsAsync(),
       ]);
 
       setHasPermission(
         cameraPermission.status === 'granted' && 
-        locationPermission.status === 'granted'
+        locationPermission.status === 'granted' &&
+        audioPermission.status === 'granted'
       );
     } catch (err) {
       console.error('Error requesting permissions:', err);
@@ -36,16 +72,106 @@ const ARViewScreen = ({ route, navigation }) => {
     }
   };
 
+  const setupAccelerometer = async () => {
+    subscription.current = Accelerometer.addListener(data => {
+      setDeviceOrientation(data);
+    });
+    await Accelerometer.setUpdateInterval(16); // ~60fps
+  };
+
+  const setupAudio = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (err) {
+      console.error('Error setting up audio:', err);
+    }
+  };
+
   const fetchARContent = async () => {
     try {
-      const content = await generateARContent(location);
+      const content = await generateARContent(location, {
+        deviceCapabilities: {
+          hasGyroscope: true,
+          hasAccelerometer: true,
+          screenSize: {
+            width: Platform.OS === 'web' ? window.innerWidth : Dimensions.get('window').width,
+            height: Platform.OS === 'web' ? window.innerHeight : Dimensions.get('window').height,
+          },
+        },
+        previousInteractions: [], // TODO: Fetch from local storage
+        timeOfDay: new Date().getHours(),
+      });
+      
       setArContent(content);
+      loadAmbientSounds(content.ambient_sounds);
       setLoading(false);
+
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }).start();
     } catch (err) {
       console.error('Error generating AR content:', err);
       setError('Failed to generate AR content');
       setLoading(false);
     }
+  };
+
+  const loadAmbientSounds = async (sounds) => {
+    if (!sounds || !audioEnabled) return;
+
+    try {
+      for (const sound of sounds) {
+        const { sound: audioObject } = await Audio.Sound.createAsync(
+          { uri: sound.url },
+          { volume: sound.volume, isLooping: true }
+        );
+        soundObjects[sound.id] = audioObject;
+        await audioObject.playAsync();
+      }
+    } catch (err) {
+      console.error('Error loading ambient sounds:', err);
+    }
+  };
+
+  const cleanup = () => {
+    if (subscription.current) {
+      subscription.current.remove();
+    }
+    Object.values(soundObjects).forEach(async (sound) => {
+      try {
+        await sound.unloadAsync();
+      } catch (err) {
+        console.error('Error unloading sound:', err);
+      }
+    });
+  };
+
+  const handlePoiPress = (poi) => {
+    setActivePoint(poi);
+    Vibration.vibrate(50); // Haptic feedback
+    
+    // Trigger animation if available
+    if (poi.animations?.length > 0) {
+      // TODO: Implement 3D model animation
+    }
+  };
+
+  const renderARScene = () => {
+    return (
+      <GLView
+        style={StyleSheet.absoluteFill}
+        onContextCreate={async (gl) => {
+          // TODO: Implement Three.js scene setup
+        }}
+      />
+    );
   };
 
   if (hasPermission === null) {
@@ -60,7 +186,7 @@ const ARViewScreen = ({ route, navigation }) => {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorText}>
-          Camera and location permissions are required for AR features.
+          Camera, location, and audio permissions are required for AR features.
         </Text>
         <TouchableOpacity style={styles.button} onPress={requestPermissions}>
           <Text style={styles.buttonText}>Grant Permissions</Text>
@@ -72,7 +198,7 @@ const ARViewScreen = ({ route, navigation }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.messageText}>Preparing AR experience...</Text>
+        <Text style={styles.messageText}>Preparing immersive AR experience...</Text>
       </View>
     );
   }
@@ -94,41 +220,84 @@ const ARViewScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <Camera style={styles.camera}>
-        {arContent && (
-          <View style={styles.overlay}>
-            {arContent.points_of_interest.map((poi, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.poiMarker,
-                  {
-                    transform: [
-                      { translateX: poi.position.x * 100 },
-                      { translateY: poi.position.y * 100 },
-                      { translateZ: poi.position.z * 100 },
-                    ],
-                  },
-                ]}
-              >
-                <Text style={styles.poiTitle}>{poi.title}</Text>
-                <Text style={styles.poiDescription}>{poi.description}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        {renderARScene()}
+        
+        <Animated.View 
+          style={[
+            styles.overlay,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          {arContent?.points_of_interest.map((poi) => (
+            <TouchableOpacity
+              key={poi.id}
+              style={[
+                styles.poiMarker,
+                activePoint?.id === poi.id && styles.activePoi,
+                {
+                  transform: [
+                    { translateX: poi.position.x * 100 },
+                    { translateY: poi.position.y * 100 },
+                    { scale: activePoint?.id === poi.id ? 1.1 : 1 },
+                  ],
+                },
+              ]}
+              onPress={() => handlePoiPress(poi)}
+            >
+              <Text style={styles.poiTitle}>{poi.title}</Text>
+              {activePoint?.id === poi.id && (
+                <View style={styles.poiContent}>
+                  <Text style={styles.poiDescription}>{poi.description}</Text>
+                  {poi.interactionPoints?.map((point, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.interactionPoint}
+                      onPress={() => {
+                        // TODO: Handle interaction point action
+                      }}
+                    >
+                      <MaterialIcons name="touch-app" size={24} color="#ffffff" />
+                      <Text style={styles.interactionText}>{point.content}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </Animated.View>
 
         <View style={styles.controls}>
           <TouchableOpacity 
             style={styles.closeButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <MaterialIcons name="close" size={24} color="#ffffff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.audioButton}
+            onPress={() => {
+              setAudioEnabled(!audioEnabled);
+              Object.values(soundObjects).forEach(sound => {
+                audioEnabled ? sound.pauseAsync() : sound.playAsync();
+              });
+            }}
+          >
+            <MaterialIcons
+              name={audioEnabled ? "volume-up" : "volume-off"}
+              size={24}
+              color="#ffffff"
+            />
           </TouchableOpacity>
 
           <View style={styles.infoPanel}>
             <Text style={styles.infoTitle}>{location?.title}</Text>
             <Text style={styles.infoText}>
-              Point your camera at the location to see historical details
+              {activePoint
+                ? "Tap interaction points to learn more"
+                : "Point your camera at the location to see historical details"}
             </Text>
           </View>
         </View>
@@ -153,7 +322,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59, 130, 246, 0.9)',
     padding: 12,
     borderRadius: 8,
-    maxWidth: 200,
+    maxWidth: 250,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  activePoi: {
+    backgroundColor: 'rgba(59, 130, 246, 0.95)',
+    borderWidth: 2,
+    borderColor: '#ffffff',
   },
   poiTitle: {
     color: '#ffffff',
@@ -161,9 +343,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
+  poiContent: {
+    marginTop: 8,
+  },
   poiDescription: {
     color: '#ffffff',
     fontSize: 14,
+    marginBottom: 8,
+  },
+  interactionPoint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 8,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  interactionText: {
+    color: '#ffffff',
+    fontSize: 14,
+    marginLeft: 8,
+    flex: 1,
   },
   controls: {
     position: 'absolute',
@@ -181,10 +381,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-end',
   },
-  closeButtonText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+  audioButton: {
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 8,
   },
   infoPanel: {
     backgroundColor: 'rgba(15, 23, 42, 0.8)',
