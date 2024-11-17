@@ -24,6 +24,23 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       };
     }
 
+    // Generate story locally if Vercel endpoint is not available
+    if (!env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT) {
+      console.log('Generating local story for location:', location.id);
+      const localStory = generateLocalStory(location);
+      
+      // Cache the local story
+      await supabase.from('ai_generated_stories').upsert([
+        {
+          location_id: location.id,
+          content: localStory,
+          created_at: new Date().toISOString(),
+        }
+      ]);
+
+      return localStory;
+    }
+
     // Call our Vercel serverless function
     const response = await fetch('https://micro-history.vercel.app/api/generate-story', {
       method: 'POST',
@@ -43,12 +60,29 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      console.error('AI service error:', error);
-      throw new Error(error.details || 'Failed to generate story');
+      throw new Error('Failed to generate story from API');
     }
 
-    const generatedContent = await response.json();
+    let generatedContent;
+    try {
+      const text = await response.text();
+      // Try to extract JSON from the response if it contains extra text
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Response is not in valid JSON format');
+      }
+      generatedContent = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error('Error parsing API response:', parseError);
+      throw new Error('Invalid response format from API');
+    }
+
+    // Validate the response structure
+    if (!generatedContent.story || !Array.isArray(generatedContent.facts) || 
+        !Array.isArray(generatedContent.historicalPeriods) || 
+        !Array.isArray(generatedContent.suggestedActivities)) {
+      throw new Error('Invalid response structure from API');
+    }
 
     // Store the generated story in Supabase for future use
     const { error: cacheError } = await supabase.from('ai_generated_stories').upsert([
@@ -75,21 +109,36 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
     };
   } catch (error) {
     console.error('Error generating story:', error);
-    
-    // Return a basic response when AI generation fails
-    return {
-      story: `Discover the history of this location at ${location.latitude}, ${location.longitude}. Every place has a story waiting to be told.`,
-      facts: [
-        "This location has historical significance",
-        "Local landmarks tell stories of the past",
-        "Communities have gathered here over time",
-      ],
-      historicalPeriods: ["Modern Era"],
-      suggestedActivities: ["Explore the surroundings", "Research local history"],
-      audioUrl: null,
-      simplifiedVersion: null,
-    };
+    return generateLocalStory(location);
   }
+};
+
+// Function to generate a local story when API is unavailable
+const generateLocalStory = (location) => {
+  const periods = ['Colonial Era', 'Victorian Era', 'Modern Era', '19th Century', '20th Century'];
+  const randomPeriod = periods[Math.floor(Math.random() * periods.length)];
+  
+  const facts = [
+    `This location at ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)} has been a significant landmark.`,
+    location.category ? `The site is notable for its ${location.category.toLowerCase()} heritage.` : 'The site holds historical significance.',
+    location.period ? `Dating back to the ${location.period}, this location has witnessed many changes.` : 'This area has evolved significantly over time.',
+  ];
+
+  const activities = [
+    'Take a guided walking tour',
+    'Photograph historical architecture',
+    'Research local history',
+    'Visit nearby landmarks',
+  ];
+
+  return {
+    story: `${location.description || 'This historical site'} stands as a testament to the rich history of the area. Over time, it has played a vital role in shaping the local community and culture.`,
+    facts,
+    historicalPeriods: [randomPeriod],
+    suggestedActivities: activities.slice(0, 3),
+    audioUrl: null,
+    simplifiedVersion: null,
+  };
 };
 
 // Enhanced AR content generation

@@ -128,7 +128,7 @@ const LocationCard = ({ location, onPress, onARPress, colorScheme }) => {
             </Text>
           </TouchableOpacity>
 
-          {location.aiGeneratedStory && (
+          {location.aiGeneratedStory && location.aiGeneratedStory.facts && (
             <View style={styles.aiInsights}>
               <Text style={[
                 styles.aiInsightsTitle,
@@ -365,26 +365,36 @@ const ExploreScreen = ({ navigation }) => {
       console.log('Fetched locations:', nearbyLocations);
 
       // Enhance locations with AI-generated content
-      nearbyLocations = await Promise.all(
+      const enhancedLocations = await Promise.all(
         nearbyLocations.map(async (loc) => {
           try {
             const story = await generateHistoricalStory(loc, {
               interests: ['history', 'architecture'], // TODO: Get from user preferences
               previousVisits: [], // TODO: Get from local storage
             });
+            
+            // Ensure story has the required structure
+            const validatedStory = {
+              story: story.story || 'Story not available',
+              facts: Array.isArray(story.facts) ? story.facts : [],
+              historicalPeriods: Array.isArray(story.historicalPeriods) ? story.historicalPeriods : [],
+              suggestedActivities: Array.isArray(story.suggestedActivities) ? story.suggestedActivities : [],
+            };
+            
             return {
               ...loc,
-              aiGeneratedStory: story,
+              aiGeneratedStory: validatedStory,
             };
           } catch (err) {
             console.warn('Failed to generate story for location:', err);
+            // Return location without AI story rather than failing
             return loc;
           }
         })
       );
 
-      console.log('Setting locations with AI stories:', nearbyLocations);
-      setLocations(nearbyLocations);
+      console.log('Setting locations with AI stories:', enhancedLocations);
+      setLocations(enhancedLocations);
       setError(null);
     } catch (err) {
       console.error('Error fetching locations:', err);

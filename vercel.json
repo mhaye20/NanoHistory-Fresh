@@ -4,18 +4,25 @@
     "api/generate-story.js": {
       "memory": 1024,
       "maxDuration": 10
+    },
+    "api/health.js": {
+      "memory": 128,
+      "maxDuration": 5
     }
   },
-  "env": {
-    "GOOGLE_CLOUD_PROJECT": "@google_cloud_project",
-    "GOOGLE_CLOUD_LOCATION": "@google_cloud_location",
-    "GOOGLE_CREDENTIALS": "@google_credentials"
-  },
-  "build": {
-    "env": {
-      "GOOGLE_CLOUD_PROJECT": "@google_cloud_project",
-      "GOOGLE_CLOUD_LOCATION": "@google_cloud_location",
-      "GOOGLE_CREDENTIALS": "@google_credentials"
+  "rewrites": [
+    { "source": "/api/health", "destination": "/api/health.js" },
+    { "source": "/api/generate-story", "destination": "/api/generate-story.js" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
+      ]
     }
-  }
+  ]
 }
