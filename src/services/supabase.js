@@ -134,7 +134,6 @@ export const getLocationDetails = async (locationId) => {
   }
 };
 
-// Location functions
 export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000, page = 1, limit = 10) => {
   try {
     console.log('Getting nearby locations with:', { latitude, longitude, filter, radius, page, limit });
@@ -144,110 +143,19 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       return { locations: [], hasMore: false };
     }
 
-    // Check cache first
-    const now = Date.now();
-    if (locationsCache.data && locationsCache.timestamp && 
-        (now - locationsCache.timestamp) < locationsCache.CACHE_DURATION) {
-      console.log('Using cached locations');
-      const start = (page - 1) * limit;
-      const end = start + limit;
-      return {
-        locations: locationsCache.data.slice(start, end),
-        hasMore: end < locationsCache.data.length
-      };
-    }
-
-    // Initialize locations only if cache is empty
-    if (!locationsCache.data) {
-      try {
-        console.log('Initializing locations with coordinates:', { latitude, longitude });
-        const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ latitude, longitude }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to initialize locations');
-        }
-
-        const { locations } = await response.json();
-        console.log('Got locations from API:', locations);
-
-        // Store locations in database using admin client
-        for (const item of locations) {
-          try {
-            console.log('Storing location:', item.location);
-            // Insert location
-            const { data: locationData, error: locationError } = await adminClient
-              .from('locations')
-              .insert([{
-                title: item.location.title,
-                description: item.location.description,
-                category: item.location.category,
-                historical_period: item.location.historical_period,
-                latitude: item.location.latitude,
-                longitude: item.location.longitude,
-                location: `POINT(${item.location.longitude} ${item.location.latitude})`,
-                image_url: item.location.image_url || 'https://picsum.photos/800/600',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              }])
-              .select()
-              .single();
-
-            if (locationError) {
-              console.error('Error storing location:', locationError);
-              continue;
-            }
-
-            // Store basic story info
-            const { error: storyError } = await adminClient
-              .from('ai_generated_stories')
-              .insert([{
-                content: { story: item.story.story }, // Store only basic story info initially
-                location_id: locationData.id,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              }]);
-
-            if (storyError) {
-              console.error('Error storing story:', storyError);
-            }
-          } catch (itemError) {
-            console.error('Error processing location:', itemError);
-          }
-        }
-      } catch (initError) {
-        console.error('Error initializing locations:', initError);
-      }
-    }
-
-    // Get paginated locations from database
-    console.log('Fetching locations from database...');
     const offset = (page - 1) * limit;
-    
-    let { data: locations, error: locationsError, count } = await adminClient
+
+    // Get base locations query
+    let baseQuery = adminClient
       .from('locations')
       .select(`
         *,
         ai_generated_stories (
           content
         )
-      `, { count: 'exact' })
-      .range(offset, offset + limit - 1);
+      `, { count: 'exact' });
 
-    console.log('Basic locations query result:', { locations, error: locationsError, count });
-
-    if (locationsError) {
-      console.error('Error fetching locations:', locationsError);
-      return { locations: [], hasMore: false };
-    }
-
-    // Calculate distances using PostGIS
-    console.log('Calculating distances...');
+    // Get distances for all locations
     const { data: distances, error: distanceError } = await adminClient
       .rpc('calculate_distances', {
         lat: latitude,
@@ -260,9 +168,35 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       return { locations: [], hasMore: false };
     }
 
-    // Merge the location data with distances
-    let mergedLocations = locations.map(location => {
-      const distanceInfo = distances.find(d => d.id === location.id);
+    // Create a map of distances for faster lookup
+    const distanceMap = new Map(
+      distances.map(d => [d.id, Math.round(d.distance)])
+    );
+
+    // Get locations based on filter
+    let query = baseQuery;
+    switch (filter) {
+      case 'popular':
+        query = query.order('visit_count', { ascending: false });
+        break;
+      case 'stories':
+        query = query.not('ai_generated_stories', 'is', null);
+        break;
+    }
+
+    // Apply pagination
+    query = query.range(offset, offset + limit - 1);
+
+    // Execute query
+    const { data: locations, error: locationsError, count } = await query;
+
+    if (locationsError) {
+      console.error('Error fetching locations:', locationsError);
+      return { locations: [], hasMore: false };
+    }
+
+    // Transform locations with distances and stories
+    let transformedLocations = locations.map(location => {
       const story = location.ai_generated_stories?.[0]?.content;
       return {
         id: location.id,
@@ -275,7 +209,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         visitCount: location.visit_count,
         hasStories: !!story,
         hasAR: false,
-        distance: distanceInfo ? Math.round(distanceInfo.distance) : null,
+        distance: distanceMap.get(location.id) || null,
         period: location.historical_period,
         category: location.category,
         lastUpdated: location.updated_at,
@@ -284,39 +218,26 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     });
 
     // Filter out locations beyond the radius
-    mergedLocations = mergedLocations.filter(loc => loc.distance !== null && loc.distance <= radius);
+    transformedLocations = transformedLocations.filter(loc => 
+      loc.distance !== null && loc.distance <= radius
+    );
 
-    // Apply filters
-    switch (filter) {
-      case 'nearby':
-        mergedLocations.sort((a, b) => a.distance - b.distance);
-        break;
-      case 'popular':
-        mergedLocations.sort((a, b) => b.visitCount - a.visitCount);
-        break;
-      case 'stories':
-        mergedLocations = mergedLocations.filter(loc => loc.hasStories);
-        break;
+    // For nearby filter, sort by distance
+    if (filter === 'nearby') {
+      transformedLocations.sort((a, b) => a.distance - b.distance);
     }
 
-    // Update cache
-    locationsCache.data = mergedLocations;
-    locationsCache.timestamp = now;
-
-    // Return paginated results
-    const start = (page - 1) * limit;
-    const end = start + limit;
     return {
-      locations: mergedLocations.slice(start, end),
-      hasMore: end < mergedLocations.length
+      locations: transformedLocations,
+      hasMore: offset + limit < count
     };
+
   } catch (error) {
     console.error('Error in getNearbyLocations:', error);
     return { locations: [], hasMore: false };
   }
 };
 
-// Rest of the file remains unchanged...
 export const createLocation = async (locationData) => {
   try {
     const { latitude, longitude, ...rest } = locationData;

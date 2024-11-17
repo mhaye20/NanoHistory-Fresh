@@ -272,7 +272,7 @@ const ExploreScreen = ({ navigation }) => {
   }, []);
 
   useEffect(() => {
-    console.log('Permission status changed:', permissionStatus);
+    console.log('Permission status or filter changed:', { permissionStatus, selectedFilter });
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
       // Reset pagination when filter changes
       setPage(1);
