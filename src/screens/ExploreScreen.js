@@ -10,6 +10,7 @@ import {
   Platform,
   Linking,
   Alert,
+  ActivityIndicator,
   Dimensions,
   useColorScheme,
 } from 'react-native';
@@ -245,12 +246,15 @@ const ChallengeCard = ({ challenge, colorScheme }) => (
 const ExploreScreen = ({ navigation }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [userPoints, setUserPoints] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [permissionStatus, setPermissionStatus] = useState(null);
   const [showChallenges, setShowChallenges] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   
   const colorScheme = useColorScheme();
 
@@ -270,7 +274,11 @@ const ExploreScreen = ({ navigation }) => {
   useEffect(() => {
     console.log('Permission status changed:', permissionStatus);
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
-      fetchNearbyLocations(permissionStatus === 'denied');
+      // Reset pagination when filter changes
+      setPage(1);
+      setLocations([]);
+      setHasMore(true);
+      fetchNearbyLocations(permissionStatus === 'denied', 1);
     }
   }, [permissionStatus, selectedFilter]);
 
@@ -299,33 +307,15 @@ const ExploreScreen = ({ navigation }) => {
     }
   };
 
-  const initializeLocations = async (latitude, longitude) => {
+  const fetchNearbyLocations = async (skipLocation = false, currentPage = page) => {
     try {
-      console.log('Initializing locations with coordinates:', { latitude, longitude });
-      const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ latitude, longitude }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to initialize locations');
+      const isFirstPage = currentPage === 1;
+      if (isFirstPage) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
       }
 
-      const data = await response.json();
-      console.log('Locations initialized:', data);
-    } catch (err) {
-      console.error('Error initializing locations:', err);
-      // Continue with fetching locations even if initialization fails
-    }
-  };
-
-  const fetchNearbyLocations = async (skipLocation = false) => {
-    try {
-      console.log('Fetching nearby locations, skipLocation:', skipLocation);
-      setRefreshing(true);
       let locationData = null;
 
       if (!skipLocation && permissionStatus === 'granted') {
@@ -334,75 +324,64 @@ const ExploreScreen = ({ navigation }) => {
           accuracy: Location.Accuracy.Balanced,
         });
         console.log('Current position:', locationData);
-
-        // Initialize locations with real data
-        await initializeLocations(
-          locationData.coords.latitude,
-          locationData.coords.longitude
-        );
       }
 
-      let nearbyLocations;
+      let result;
       if (locationData) {
         console.log('Fetching locations with coordinates:', {
           lat: locationData.coords.latitude,
-          lng: locationData.coords.longitude
+          lng: locationData.coords.longitude,
+          page: currentPage
         });
-        nearbyLocations = await getNearbyLocations(
+        result = await getNearbyLocations(
           locationData.coords.latitude,
           locationData.coords.longitude,
-          selectedFilter
+          selectedFilter,
+          5000,
+          currentPage
         );
       } else {
         console.log('Fetching locations without coordinates');
-        nearbyLocations = await getNearbyLocations(
+        result = await getNearbyLocations(
           null,
           null,
-          selectedFilter
+          selectedFilter,
+          5000,
+          currentPage
         );
       }
 
-      console.log('Fetched locations:', nearbyLocations);
+      console.log('Fetched locations:', result);
 
-      // Enhance locations with AI-generated content
-      const enhancedLocations = await Promise.all(
-        nearbyLocations.map(async (loc) => {
-          try {
-            const story = await generateHistoricalStory(loc, {
-              interests: ['history', 'architecture'], // TODO: Get from user preferences
-              previousVisits: [], // TODO: Get from local storage
-            });
-            
-            // Ensure story has the required structure
-            const validatedStory = {
-              story: story.story || 'Story not available',
-              facts: Array.isArray(story.facts) ? story.facts : [],
-              historicalPeriods: Array.isArray(story.historicalPeriods) ? story.historicalPeriods : [],
-              suggestedActivities: Array.isArray(story.suggestedActivities) ? story.suggestedActivities : [],
-            };
-            
-            return {
-              ...loc,
-              aiGeneratedStory: validatedStory,
-            };
-          } catch (err) {
-            console.warn('Failed to generate story for location:', err);
-            // Return location without AI story rather than failing
-            return loc;
-          }
-        })
+      setLocations(prev => 
+        currentPage === 1 ? result.locations : [...prev, ...result.locations]
       );
-
-      console.log('Setting locations with AI stories:', enhancedLocations);
-      setLocations(enhancedLocations);
+      setHasMore(result.hasMore);
       setError(null);
     } catch (err) {
       console.error('Error fetching locations:', err);
       setError('Failed to fetch locations');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchNearbyLocations(permissionStatus === 'denied', nextPage);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setPage(1);
+    setLocations([]);
+    setHasMore(true);
+    fetchNearbyLocations(permissionStatus === 'denied', 1);
   };
 
   const handleLocationPress = (location) => {
@@ -426,6 +405,16 @@ const ExploreScreen = ({ navigation }) => {
       colorScheme={colorScheme}
     />
   );
+
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.loadingMore}>
+        <ActivityIndicator size="small" color="#3b82f6" />
+        <Text style={styles.loadingMoreText}>Loading more locations...</Text>
+      </View>
+    );
+  };
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -570,6 +559,7 @@ const ExploreScreen = ({ navigation }) => {
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContainer}
         ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <MaterialIcons
@@ -592,7 +582,9 @@ const ExploreScreen = ({ navigation }) => {
           </View>
         }
         refreshing={refreshing}
-        onRefresh={() => fetchNearbyLocations()}
+        onRefresh={handleRefresh}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
       />
 
       <View style={styles.fabContainer}>
@@ -1002,6 +994,17 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingMore: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  loadingMoreText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#64748b',
   },
 });
 

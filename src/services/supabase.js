@@ -36,6 +36,13 @@ const adminClient = createClient(
   env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
 );
 
+// Cache for locations
+let locationsCache = {
+  data: null,
+  timestamp: null,
+  CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+};
+
 // Clear all locations from the database
 export const clearLocations = async () => {
   try {
@@ -73,6 +80,10 @@ export const clearLocations = async () => {
       console.error('Error clearing locations:', locationsError);
       throw locationsError;
     }
+
+    // Clear cache
+    locationsCache.data = null;
+    locationsCache.timestamp = null;
 
     console.log('All locations cleared from database');
   } catch (error) {
@@ -124,105 +135,115 @@ export const getLocationDetails = async (locationId) => {
 };
 
 // Location functions
-export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000) => {
+export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000, page = 1, limit = 10) => {
   try {
-    console.log('Getting nearby locations with:', { latitude, longitude, filter, radius });
+    console.log('Getting nearby locations with:', { latitude, longitude, filter, radius, page, limit });
 
     if (!latitude || !longitude) {
       console.error('No location provided');
-      return [];
+      return { locations: [], hasMore: false };
     }
 
-    // Initialize locations if needed
-    try {
-      // First clear existing locations
-      await clearLocations();
+    // Check cache first
+    const now = Date.now();
+    if (locationsCache.data && locationsCache.timestamp && 
+        (now - locationsCache.timestamp) < locationsCache.CACHE_DURATION) {
+      console.log('Using cached locations');
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      return {
+        locations: locationsCache.data.slice(start, end),
+        hasMore: end < locationsCache.data.length
+      };
+    }
 
-      // Then get new locations from API
-      console.log('Initializing locations with coordinates:', { latitude, longitude });
-      const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ latitude, longitude }),
-      });
+    // Initialize locations only if cache is empty
+    if (!locationsCache.data) {
+      try {
+        console.log('Initializing locations with coordinates:', { latitude, longitude });
+        const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ latitude, longitude }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to initialize locations');
-      }
-
-      const { locations } = await response.json();
-      console.log('Got locations from API:', locations);
-
-      // Store locations and stories in database using admin client
-      for (const item of locations) {
-        try {
-          console.log('Storing location:', item.location);
-          // Insert location
-          const { data: locationData, error: locationError } = await adminClient
-            .from('locations')
-            .insert([{
-              title: item.location.title,
-              description: item.location.description,
-              category: item.location.category,
-              historical_period: item.location.historical_period,
-              latitude: item.location.latitude,
-              longitude: item.location.longitude,
-              location: `POINT(${item.location.longitude} ${item.location.latitude})`,
-              image_url: item.location.image_url || 'https://picsum.photos/800/600',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }])
-            .select()
-            .single();
-
-          if (locationError) {
-            console.error('Error storing location:', locationError);
-            continue;
-          }
-
-          console.log('Location stored:', locationData);
-
-          // Insert story
-          console.log('Storing story for location:', locationData.id);
-          const { error: storyError } = await adminClient
-            .from('ai_generated_stories')
-            .insert([{
-              content: item.story,
-              location_id: locationData.id,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }]);
-
-          if (storyError) {
-            console.error('Error storing story:', storyError);
-          }
-        } catch (itemError) {
-          console.error('Error processing location:', itemError);
+        if (!response.ok) {
+          throw new Error('Failed to initialize locations');
         }
+
+        const { locations } = await response.json();
+        console.log('Got locations from API:', locations);
+
+        // Store locations in database using admin client
+        for (const item of locations) {
+          try {
+            console.log('Storing location:', item.location);
+            // Insert location
+            const { data: locationData, error: locationError } = await adminClient
+              .from('locations')
+              .insert([{
+                title: item.location.title,
+                description: item.location.description,
+                category: item.location.category,
+                historical_period: item.location.historical_period,
+                latitude: item.location.latitude,
+                longitude: item.location.longitude,
+                location: `POINT(${item.location.longitude} ${item.location.latitude})`,
+                image_url: item.location.image_url || 'https://picsum.photos/800/600',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }])
+              .select()
+              .single();
+
+            if (locationError) {
+              console.error('Error storing location:', locationError);
+              continue;
+            }
+
+            // Store basic story info
+            const { error: storyError } = await adminClient
+              .from('ai_generated_stories')
+              .insert([{
+                content: { story: item.story.story }, // Store only basic story info initially
+                location_id: locationData.id,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }]);
+
+            if (storyError) {
+              console.error('Error storing story:', storyError);
+            }
+          } catch (itemError) {
+            console.error('Error processing location:', itemError);
+          }
+        }
+      } catch (initError) {
+        console.error('Error initializing locations:', initError);
       }
-    } catch (initError) {
-      console.error('Error initializing locations:', initError);
-      // Continue with fetching existing locations
     }
 
-    // Get locations from database
+    // Get paginated locations from database
     console.log('Fetching locations from database...');
-    let { data: locations, error: locationsError } = await adminClient
+    const offset = (page - 1) * limit;
+    
+    let { data: locations, error: locationsError, count } = await adminClient
       .from('locations')
       .select(`
         *,
         ai_generated_stories (
           content
         )
-      `);
+      `, { count: 'exact' })
+      .range(offset, offset + limit - 1);
 
-    console.log('Basic locations query result:', { locations, error: locationsError });
+    console.log('Basic locations query result:', { locations, error: locationsError, count });
 
     if (locationsError) {
       console.error('Error fetching locations:', locationsError);
-      return [];
+      return { locations: [], hasMore: false };
     }
 
     // Calculate distances using PostGIS
@@ -234,11 +255,9 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         radius_meters: radius
       });
 
-    console.log('Distance calculation result:', { distances, error: distanceError });
-
     if (distanceError) {
       console.error('Error calculating distances:', distanceError);
-      return [];
+      return { locations: [], hasMore: false };
     }
 
     // Merge the location data with distances
@@ -264,12 +283,8 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       };
     });
 
-    console.log('Merged locations:', mergedLocations);
-
     // Filter out locations beyond the radius
     mergedLocations = mergedLocations.filter(loc => loc.distance !== null && loc.distance <= radius);
-
-    console.log('Filtered locations:', mergedLocations);
 
     // Apply filters
     switch (filter) {
@@ -284,15 +299,24 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         break;
     }
 
-    console.log('Final locations to return:', mergedLocations);
-    return mergedLocations;
+    // Update cache
+    locationsCache.data = mergedLocations;
+    locationsCache.timestamp = now;
+
+    // Return paginated results
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    return {
+      locations: mergedLocations.slice(start, end),
+      hasMore: end < mergedLocations.length
+    };
   } catch (error) {
     console.error('Error in getNearbyLocations:', error);
-    return [];
+    return { locations: [], hasMore: false };
   }
 };
 
-// Create a new historical location
+// Rest of the file remains unchanged...
 export const createLocation = async (locationData) => {
   try {
     const { latitude, longitude, ...rest } = locationData;
@@ -317,7 +341,6 @@ export const createLocation = async (locationData) => {
   }
 };
 
-// Update an existing location
 export const updateLocation = async (id, updates) => {
   try {
     const { data, error } = await adminClient
@@ -337,7 +360,6 @@ export const updateLocation = async (id, updates) => {
   }
 };
 
-// Increment visit count for a location
 export const incrementVisitCount = async (locationId) => {
   try {
     const { data, error } = await adminClient.rpc('increment_visit_count', {
@@ -352,7 +374,6 @@ export const incrementVisitCount = async (locationId) => {
   }
 };
 
-// Story functions
 export const createStory = async (storyData) => {
   try {
     const { data, error } = await adminClient
@@ -397,7 +418,6 @@ export const getStories = async (locationId = null) => {
   }
 };
 
-// Authentication functions (use regular client for these)
 export const signInWithEmail = async (email, password) => {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -436,7 +456,6 @@ export const signOut = async () => {
   }
 };
 
-// Storage functions
 export const uploadImage = async (filePath, file) => {
   try {
     const { data, error } = await adminClient.storage
