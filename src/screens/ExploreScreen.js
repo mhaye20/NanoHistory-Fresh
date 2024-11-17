@@ -299,33 +299,27 @@ const ExploreScreen = ({ navigation }) => {
     }
   };
 
-  const openSettings = () => {
-    if (Platform.OS === 'ios') {
-      Linking.openURL('app-settings:');
-    } else {
-      Linking.openSettings();
-    }
-  };
+  const initializeLocations = async (latitude, longitude) => {
+    try {
+      console.log('Initializing locations with coordinates:', { latitude, longitude });
+      const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude, longitude }),
+      });
 
-  const handlePermissionDenied = () => {
-    Alert.alert(
-      'Location Permission Required',
-      'NanoHistory needs access to your location to show you nearby historical sites. Would you like to enable location access?',
-      [
-        {
-          text: 'Not Now',
-          style: 'cancel',
-          onPress: () => {
-            fetchNearbyLocations(true);
-          },
-        },
-        {
-          text: 'Open Settings',
-          onPress: openSettings,
-        },
-      ],
-      { cancelable: false }
-    );
+      if (!response.ok) {
+        throw new Error('Failed to initialize locations');
+      }
+
+      const data = await response.json();
+      console.log('Locations initialized:', data);
+    } catch (err) {
+      console.error('Error initializing locations:', err);
+      // Continue with fetching locations even if initialization fails
+    }
   };
 
   const fetchNearbyLocations = async (skipLocation = false) => {
@@ -340,6 +334,12 @@ const ExploreScreen = ({ navigation }) => {
           accuracy: Location.Accuracy.Balanced,
         });
         console.log('Current position:', locationData);
+
+        // Initialize locations with real data
+        await initializeLocations(
+          locationData.coords.latitude,
+          locationData.coords.longitude
+        );
       }
 
       let nearbyLocations;

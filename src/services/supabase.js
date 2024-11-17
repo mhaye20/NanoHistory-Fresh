@@ -16,7 +16,7 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
-// Initialize Supabase client
+// Initialize Supabase client with anon key for auth
 export const supabase = createClient(
   env.EXPO_PUBLIC_SUPABASE_URL,
   env.EXPO_PUBLIC_SUPABASE_KEY,
@@ -30,23 +30,56 @@ export const supabase = createClient(
   }
 );
 
-// Mock data for fallback when location permissions are denied
-const mockLocations = [
-  {
-    id: 1,
-    title: "Historic Downtown Square",
-    description: "A beautiful town square dating back to the 1800s, featuring original architecture and historical landmarks.",
-    latitude: 37.7749,
-    longitude: -122.4194,
-    imageUrl: "https://picsum.photos/800/600",
-    rating: 4.5,
-    visitCount: 128,
-    hasStories: true,
-    hasAR: true,
-    distance: 1200, // meters
-  },
-  // ... other mock locations ...
-];
+// Initialize admin client with service role key for database operations
+const adminClient = createClient(
+  env.EXPO_PUBLIC_SUPABASE_URL,
+  env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
+);
+
+// Clear all locations from the database
+export const clearLocations = async () => {
+  try {
+    console.log('Clearing existing locations...');
+    
+    // First clear AI generated stories
+    const { error: aiError } = await adminClient
+      .from('ai_generated_stories')
+      .delete()
+      .not('id', 'is', null);
+
+    if (aiError) {
+      console.error('Error clearing AI stories:', aiError);
+      throw aiError;
+    }
+
+    // Then clear stories
+    const { error: storiesError } = await adminClient
+      .from('stories')
+      .delete()
+      .not('id', 'is', null);
+
+    if (storiesError) {
+      console.error('Error clearing stories:', storiesError);
+      throw storiesError;
+    }
+
+    // Finally clear locations
+    const { error: locationsError } = await adminClient
+      .from('locations')
+      .delete()
+      .not('id', 'is', null);
+
+    if (locationsError) {
+      console.error('Error clearing locations:', locationsError);
+      throw locationsError;
+    }
+
+    console.log('All locations cleared from database');
+  } catch (error) {
+    console.error('Error clearing locations:', error);
+    throw error;
+  }
+};
 
 // Location functions
 export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000) => {
@@ -54,26 +87,105 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     console.log('Getting nearby locations with:', { latitude, longitude, filter, radius });
 
     if (!latitude || !longitude) {
-      console.log('No location provided, using mock data');
-      return mockLocations;
+      console.error('No location provided');
+      return [];
     }
 
-    // First, get just the locations without joins to see if that works
+    // Initialize locations if needed
+    try {
+      // First clear existing locations
+      await clearLocations();
+
+      // Then get new locations from API
+      console.log('Initializing locations with coordinates:', { latitude, longitude });
+      const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude, longitude }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to initialize locations');
+      }
+
+      const { locations } = await response.json();
+      console.log('Got locations from API:', locations);
+
+      // Store locations and stories in database using admin client
+      for (const item of locations) {
+        try {
+          console.log('Storing location:', item.location);
+          // Insert location
+          const { data: locationData, error: locationError } = await adminClient
+            .from('locations')
+            .insert([{
+              title: item.location.title,
+              description: item.location.description,
+              category: item.location.category,
+              historical_period: item.location.historical_period,
+              latitude: item.location.latitude,
+              longitude: item.location.longitude,
+              location: `POINT(${item.location.longitude} ${item.location.latitude})`,
+              image_url: item.location.image_url || 'https://picsum.photos/800/600',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }])
+            .select()
+            .single();
+
+          if (locationError) {
+            console.error('Error storing location:', locationError);
+            continue;
+          }
+
+          console.log('Location stored:', locationData);
+
+          // Insert story
+          console.log('Storing story for location:', locationData.id);
+          const { error: storyError } = await adminClient
+            .from('ai_generated_stories')
+            .insert([{
+              content: item.story,
+              location_id: locationData.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
+
+          if (storyError) {
+            console.error('Error storing story:', storyError);
+          }
+        } catch (itemError) {
+          console.error('Error processing location:', itemError);
+        }
+      }
+    } catch (initError) {
+      console.error('Error initializing locations:', initError);
+      // Continue with fetching existing locations
+    }
+
+    // Get locations from database
     console.log('Fetching locations from database...');
-    let { data: locations, error: locationsError } = await supabase
+    let { data: locations, error: locationsError } = await adminClient
       .from('locations')
-      .select('*');
+      .select(`
+        *,
+        ai_generated_stories (
+          content
+        )
+      `);
 
     console.log('Basic locations query result:', { locations, error: locationsError });
 
     if (locationsError) {
       console.error('Error fetching locations:', locationsError);
-      return mockLocations;
+      return [];
     }
 
-    // Then, calculate distances using PostGIS
+    // Calculate distances using PostGIS
     console.log('Calculating distances...');
-    const { data: distances, error: distanceError } = await supabase
+    const { data: distances, error: distanceError } = await adminClient
       .rpc('calculate_distances', {
         lat: latitude,
         lng: longitude,
@@ -84,12 +196,13 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
 
     if (distanceError) {
       console.error('Error calculating distances:', distanceError);
-      return mockLocations;
+      return [];
     }
 
     // Merge the location data with distances
     let mergedLocations = locations.map(location => {
       const distanceInfo = distances.find(d => d.id === location.id);
+      const story = location.ai_generated_stories?.[0]?.content;
       return {
         id: location.id,
         title: location.title,
@@ -99,12 +212,13 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         imageUrl: location.image_url,
         rating: location.rating,
         visitCount: location.visit_count,
-        hasStories: false, // We'll add this functionality back once we confirm basic location fetching works
-        hasAR: false, // We'll add this functionality back once we confirm basic location fetching works
+        hasStories: !!story,
+        hasAR: false,
         distance: distanceInfo ? Math.round(distanceInfo.distance) : null,
         period: location.historical_period,
         category: location.category,
         lastUpdated: location.updated_at,
+        aiGeneratedStory: story
       };
     });
 
@@ -124,7 +238,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         mergedLocations.sort((a, b) => b.visitCount - a.visitCount);
         break;
       case 'stories':
-        // We'll add this back once basic location fetching works
+        mergedLocations = mergedLocations.filter(loc => loc.hasStories);
         break;
     }
 
@@ -132,7 +246,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     return mergedLocations;
   } catch (error) {
     console.error('Error in getNearbyLocations:', error);
-    return mockLocations;
+    return [];
   }
 };
 
@@ -141,7 +255,7 @@ export const createLocation = async (locationData) => {
   try {
     const { latitude, longitude, ...rest } = locationData;
     
-    const { data, error } = await supabase
+    const { data, error } = await adminClient
       .from('locations')
       .insert([{
         ...rest,
@@ -164,7 +278,7 @@ export const createLocation = async (locationData) => {
 // Update an existing location
 export const updateLocation = async (id, updates) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await adminClient
       .from('locations')
       .update({
         ...updates,
@@ -184,7 +298,7 @@ export const updateLocation = async (id, updates) => {
 // Increment visit count for a location
 export const incrementVisitCount = async (locationId) => {
   try {
-    const { data, error } = await supabase.rpc('increment_visit_count', {
+    const { data, error } = await adminClient.rpc('increment_visit_count', {
       location_id: locationId
     });
 
@@ -199,7 +313,7 @@ export const incrementVisitCount = async (locationId) => {
 // Story functions
 export const createStory = async (storyData) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await adminClient
       .from('stories')
       .insert([{
         ...storyData,
@@ -218,7 +332,7 @@ export const createStory = async (storyData) => {
 
 export const getStories = async (locationId = null) => {
   try {
-    let query = supabase
+    let query = adminClient
       .from('stories')
       .select(`
         *,
@@ -241,7 +355,7 @@ export const getStories = async (locationId = null) => {
   }
 };
 
-// Authentication functions
+// Authentication functions (use regular client for these)
 export const signInWithEmail = async (email, password) => {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -283,7 +397,7 @@ export const signOut = async () => {
 // Storage functions
 export const uploadImage = async (filePath, file) => {
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await adminClient.storage
       .from('images')
       .upload(filePath, file);
 
@@ -297,7 +411,7 @@ export const uploadImage = async (filePath, file) => {
 
 export const getImageUrl = (path) => {
   if (!path) return null;
-  return supabase.storage.from('images').getPublicUrl(path).data.publicUrl;
+  return adminClient.storage.from('images').getPublicUrl(path).data.publicUrl;
 };
 
 export default {
@@ -313,4 +427,5 @@ export default {
   incrementVisitCount,
   uploadImage,
   getImageUrl,
+  clearLocations,
 };
