@@ -19,7 +19,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
-import { submitUserContent } from '../services/ai';
+import { createStory, supabase } from '../services/supabase';
 
 const CreateStoryScreen = ({ navigation }) => {
   const [story, setStory] = useState('');
@@ -39,6 +39,7 @@ const CreateStoryScreen = ({ navigation }) => {
   const colorScheme = useColorScheme();
 
   useEffect(() => {
+    checkAuth();
     requestPermissions();
     getCurrentLocation();
   }, []);
@@ -53,6 +54,20 @@ const CreateStoryScreen = ({ navigation }) => {
     }).start();
   }, [points]);
 
+  const checkAuth = async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!session) {
+        navigation.navigate('Auth');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking auth:', error);
+      navigation.navigate('Auth');
+    }
+  };
+
+  // Rest of the component remains exactly the same...
   const requestPermissions = async () => {
     try {
       const [imagePermission, locationPermission] = await Promise.all([
@@ -217,22 +232,35 @@ const CreateStoryScreen = ({ navigation }) => {
       await getCurrentLocation();
     }
 
+    if (!currentLocation) {
+      Alert.alert('Location Required', 'Unable to get your location. Please enable location services and try again.');
+      return;
+    }
+
+    // Check if user is still authenticated
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (!session) {
+      navigation.navigate('Auth');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const content = {
-        locationId: currentLocation ? `${currentLocation.coords.latitude},${currentLocation.coords.longitude}` : null,
-        userId: 'user123', // TODO: Get from auth
-        contentType: 'story',
+      // Create story data
+      const storyData = {
         title: title.trim(),
-        text: story.trim(),
-        media: images,
-        tags,
-        accuracy,
-        aiSuggestions,
+        content: story.trim(),
+        media_urls: images,
+        tags: tags,
+        accuracy_score: accuracy,
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        author_id: session.user.id
       };
 
-      await submitUserContent(content);
+      // Create the story in Supabase
+      const createdStory = await createStory(storyData);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
@@ -247,7 +275,7 @@ const CreateStoryScreen = ({ navigation }) => {
       );
     } catch (error) {
       console.error('Error submitting story:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
       Alert.alert(
         'Error',
         'Failed to submit your story. Please try again.'

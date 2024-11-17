@@ -1,6 +1,8 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as ExpoLinking from 'expo-linking';
 import env from '../config/env';
 
 // SecureStore adapter for Supabase auth persistence
@@ -16,6 +18,15 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
+// Get the redirect URL based on platform
+const getRedirectUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:19006/auth/callback';
+  }
+  // Get the app's deep link URL
+  return ExpoLinking.createURL('auth/callback');
+};
+
 // Initialize Supabase client with anon key for auth
 export const supabase = createClient(
   env.EXPO_PUBLIC_SUPABASE_URL,
@@ -25,7 +36,9 @@ export const supabase = createClient(
       storage: ExpoSecureStoreAdapter,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      redirectTo: getRedirectUrl(),
     },
   }
 );
@@ -98,6 +111,7 @@ export const getLocationDetails = async (locationId) => {
       .from('locations')
       .select(`
         *,
+        stories (*),
         ai_generated_stories (
           content
         )
@@ -110,7 +124,8 @@ export const getLocationDetails = async (locationId) => {
       throw locationError;
     }
 
-    const story = location.ai_generated_stories?.[0]?.content;
+    const aiStory = location.ai_generated_stories?.[0]?.content;
+    const hasUserStories = location.stories && location.stories.length > 0;
 
     return {
       id: location.id,
@@ -121,12 +136,13 @@ export const getLocationDetails = async (locationId) => {
       imageUrl: location.image_url,
       rating: location.rating,
       visitCount: location.visit_count,
-      hasStories: !!story,
+      hasStories: hasUserStories,
       hasAR: false,
       period: location.historical_period,
       category: location.category,
       lastUpdated: location.updated_at,
-      aiGeneratedStory: story
+      aiGeneratedStory: aiStory,
+      userStories: location.stories || []
     };
   } catch (error) {
     console.error('Error getting location details:', error);
@@ -144,16 +160,6 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     }
 
     const offset = (page - 1) * limit;
-
-    // Get base locations query
-    let baseQuery = adminClient
-      .from('locations')
-      .select(`
-        *,
-        ai_generated_stories (
-          content
-        )
-      `, { count: 'exact' });
 
     // Get distances for all locations
     const { data: distances, error: distanceError } = await adminClient
@@ -173,15 +179,35 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       distances.map(d => [d.id, Math.round(d.distance)])
     );
 
-    // Get locations based on filter
-    let query = baseQuery;
-    switch (filter) {
-      case 'popular':
+    let query;
+    if (filter === 'stories') {
+      // For stories filter, join with the stories table to get locations with user stories
+      query = adminClient
+        .from('locations')
+        .select(`
+          *,
+          stories!inner (*),
+          ai_generated_stories (
+            content
+          )
+        `, { count: 'exact' })
+        .order('updated_at', { ascending: false });
+    } else {
+      // For other filters, use the base query
+      query = adminClient
+        .from('locations')
+        .select(`
+          *,
+          stories (*),
+          ai_generated_stories (
+            content
+          )
+        `, { count: 'exact' });
+
+      // Apply filter-specific modifications
+      if (filter === 'popular') {
         query = query.order('visit_count', { ascending: false });
-        break;
-      case 'stories':
-        query = query.not('ai_generated_stories', 'is', null);
-        break;
+      }
     }
 
     // Apply pagination
@@ -197,7 +223,8 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
 
     // Transform locations with distances and stories
     let transformedLocations = locations.map(location => {
-      const story = location.ai_generated_stories?.[0]?.content;
+      const aiStory = location.ai_generated_stories?.[0]?.content;
+      const hasUserStories = location.stories && location.stories.length > 0;
       return {
         id: location.id,
         title: location.title,
@@ -207,13 +234,14 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         imageUrl: location.image_url,
         rating: location.rating,
         visitCount: location.visit_count,
-        hasStories: !!story,
+        hasStories: hasUserStories,
         hasAR: false,
         distance: distanceMap.get(location.id) || null,
         period: location.historical_period,
         category: location.category,
         lastUpdated: location.updated_at,
-        aiGeneratedStory: story
+        aiGeneratedStory: aiStory,
+        userStories: location.stories || []
       };
     });
 
@@ -235,6 +263,87 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
   } catch (error) {
     console.error('Error in getNearbyLocations:', error);
     return { locations: [], hasMore: false };
+  }
+};
+
+export const createStory = async (storyData) => {
+  try {
+    const { latitude, longitude, ...rest } = storyData;
+
+    // First, check if a location exists at these coordinates
+    const { data: distances, error: distanceError } = await adminClient
+      .rpc('calculate_distances', {
+        lat: latitude,
+        lng: longitude,
+        radius_meters: 100 // Look for locations within 100 meters
+      });
+
+    if (distanceError) {
+      console.error('Error finding nearest location:', distanceError);
+      throw distanceError;
+    }
+
+    let locationId;
+    
+    if (distances && distances.length > 0) {
+      // Use closest existing location
+      locationId = distances[0].id;
+    } else {
+      // Create new location
+      const { data: newLocation, error: createLocationError } = await adminClient
+        .from('locations')
+        .insert([{
+          title: `Location near ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+          description: 'A location with user stories',
+          latitude,
+          longitude,
+          location: `POINT(${longitude} ${latitude})`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (createLocationError) {
+        console.error('Error creating location:', createLocationError);
+        throw createLocationError;
+      }
+
+      locationId = newLocation.id;
+    }
+
+    // Create the story with the location ID
+    const { data: story, error: storyError } = await adminClient
+      .from('stories')
+      .insert([{
+        ...rest,
+        location_id: locationId,
+      }])
+      .select(`
+        *,
+        location:locations(*)
+      `)
+      .single();
+
+    if (storyError) {
+      console.error('Error creating story:', storyError);
+      throw storyError;
+    }
+
+    // Update location's updated_at timestamp
+    const { error: updateError } = await adminClient
+      .from('locations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', locationId);
+
+    if (updateError) {
+      console.error('Error updating location timestamp:', updateError);
+    }
+
+    return story;
+  } catch (error) {
+    console.error('Error in createStory:', error);
+    throw error;
   }
 };
 
@@ -291,25 +400,6 @@ export const incrementVisitCount = async (locationId) => {
     return data;
   } catch (error) {
     console.error('Error incrementing visit count:', error);
-    throw error;
-  }
-};
-
-export const createStory = async (storyData) => {
-  try {
-    const { data, error } = await adminClient
-      .from('stories')
-      .insert([{
-        ...storyData,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }])
-      .select();
-
-    if (error) throw error;
-    return data[0];
-  } catch (error) {
-    console.error('Error creating story:', error);
     throw error;
   }
 };

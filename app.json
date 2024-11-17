@@ -60,6 +60,7 @@
         }
       ]
     ],
+    "scheme": "nanohistory",
     "extra": {
       "eas": {
         "projectId": "nanohistory"

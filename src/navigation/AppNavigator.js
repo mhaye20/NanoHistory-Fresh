@@ -10,6 +10,7 @@ import LocationDetailScreen from '../screens/LocationDetailScreen';
 import ARViewScreen from '../screens/ARViewScreen';
 import AIGuideScreen from '../screens/AIGuideScreen';
 import CreateStoryScreen from '../screens/CreateStoryScreen';
+import AuthScreen from '../screens/AuthScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -85,6 +86,17 @@ const AppNavigator = () => {
             headerTransparent: true,
             headerBlurEffect: 'dark',
             presentation: 'modal',
+          }}
+        />
+        <Stack.Screen
+          name="Auth"
+          component={AuthScreen}
+          options={{
+            title: '',
+            headerTransparent: true,
+            headerBlurEffect: 'dark',
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
           }}
         />
       </Stack.Navigator>
