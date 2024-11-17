@@ -6,13 +6,17 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
-  Vibration,
+  Dimensions,
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { GLView } from 'expo-gl';
 import { Accelerometer } from 'expo-sensors';
+import * as Haptics from 'expo-haptics';
+import { Renderer } from 'expo-three';
+import { AmbientLight, PerspectiveCamera, PointLight, Scene } from 'three';
+import { Asset } from 'expo-asset';
 import { generateARContent } from '../services/ai';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -29,6 +33,10 @@ const ARViewScreen = ({ route, navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const soundObjects = useRef({}).current;
   const subscription = useRef(null);
+  const scene = useRef(null);
+  const camera = useRef(null);
+  const renderer = useRef(null);
+  const animationFrameId = useRef(null);
 
   useEffect(() => {
     setupAR();
@@ -75,6 +83,10 @@ const ARViewScreen = ({ route, navigation }) => {
   const setupAccelerometer = async () => {
     subscription.current = Accelerometer.addListener(data => {
       setDeviceOrientation(data);
+      if (camera.current) {
+        camera.current.rotation.x = data.x * Math.PI / 2;
+        camera.current.rotation.y = data.y * Math.PI / 2;
+      }
     });
     await Accelerometer.setUpdateInterval(16); // ~60fps
   };
@@ -99,16 +111,16 @@ const ARViewScreen = ({ route, navigation }) => {
           hasGyroscope: true,
           hasAccelerometer: true,
           screenSize: {
-            width: Platform.OS === 'web' ? window.innerWidth : Dimensions.get('window').width,
-            height: Platform.OS === 'web' ? window.innerHeight : Dimensions.get('window').height,
+            width: Dimensions.get('window').width,
+            height: Dimensions.get('window').height,
           },
         },
-        previousInteractions: [], // TODO: Fetch from local storage
+        previousInteractions: [], // TODO: Load from storage
         timeOfDay: new Date().getHours(),
       });
       
       setArContent(content);
-      loadAmbientSounds(content.ambient_sounds);
+      loadAmbientSounds(content.audio?.ambient);
       setLoading(false);
 
       Animated.timing(fadeAnim, {
@@ -123,18 +135,16 @@ const ARViewScreen = ({ route, navigation }) => {
     }
   };
 
-  const loadAmbientSounds = async (sounds) => {
-    if (!sounds || !audioEnabled) return;
+  const loadAmbientSounds = async (ambient) => {
+    if (!ambient || !audioEnabled) return;
 
     try {
-      for (const sound of sounds) {
-        const { sound: audioObject } = await Audio.Sound.createAsync(
-          { uri: sound.url },
-          { volume: sound.volume, isLooping: true }
-        );
-        soundObjects[sound.id] = audioObject;
-        await audioObject.playAsync();
-      }
+      const { sound: audioObject } = await Audio.Sound.createAsync(
+        { uri: ambient.url },
+        { volume: ambient.volume, isLooping: true }
+      );
+      soundObjects.ambient = audioObject;
+      await audioObject.playAsync();
     } catch (err) {
       console.error('Error loading ambient sounds:', err);
     }
@@ -151,27 +161,53 @@ const ARViewScreen = ({ route, navigation }) => {
         console.error('Error unloading sound:', err);
       }
     });
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
+    }
+    if (renderer.current) {
+      renderer.current.dispose();
+    }
   };
 
   const handlePoiPress = (poi) => {
     setActivePoint(poi);
-    Vibration.vibrate(50); // Haptic feedback
-    
-    // Trigger animation if available
-    if (poi.animations?.length > 0) {
-      // TODO: Implement 3D model animation
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const renderARScene = () => {
-    return (
-      <GLView
-        style={StyleSheet.absoluteFill}
-        onContextCreate={async (gl) => {
-          // TODO: Implement Three.js scene setup
-        }}
-      />
-    );
+  const onContextCreate = async (gl) => {
+    const { drawingBufferWidth: width, drawingBufferHeight: height } = gl;
+
+    // Create renderer
+    renderer.current = new Renderer({ gl });
+    renderer.current.setSize(width, height);
+    renderer.current.setClearColor(0x000000, 0);
+
+    // Create scene
+    scene.current = new Scene();
+
+    // Create and setup camera
+    camera.current = new PerspectiveCamera(75, width / height, 0.1, 1000);
+    camera.current.position.z = 5;
+
+    // Add lighting
+    const ambientLight = new AmbientLight(0xffffff, 0.5);
+    scene.current.add(ambientLight);
+
+    const pointLight = new PointLight(0xffffff, 0.8);
+    pointLight.position.set(0, 1, 5);
+    scene.current.add(pointLight);
+
+    // Start render loop
+    const render = () => {
+      animationFrameId.current = requestAnimationFrame(render);
+      
+      if (camera.current && scene.current && renderer.current) {
+        renderer.current.render(scene.current, camera.current);
+      }
+      
+      gl.endFrameEXP();
+    };
+    render();
   };
 
   if (hasPermission === null) {
@@ -220,7 +256,10 @@ const ARViewScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <Camera style={styles.camera}>
-        {renderARScene()}
+        <GLView
+          style={StyleSheet.absoluteFill}
+          onContextCreate={onContextCreate}
+        />
         
         <Animated.View 
           style={[
@@ -230,38 +269,26 @@ const ARViewScreen = ({ route, navigation }) => {
             },
           ]}
         >
-          {arContent?.points_of_interest.map((poi) => (
+          {arContent?.models?.map((model) => (
             <TouchableOpacity
-              key={poi.id}
+              key={model.id}
               style={[
                 styles.poiMarker,
-                activePoint?.id === poi.id && styles.activePoi,
+                activePoint?.id === model.id && styles.activePoi,
                 {
                   transform: [
-                    { translateX: poi.position.x * 100 },
-                    { translateY: poi.position.y * 100 },
-                    { scale: activePoint?.id === poi.id ? 1.1 : 1 },
+                    { translateX: model.position.x * 100 },
+                    { translateY: model.position.y * 100 },
+                    { scale: activePoint?.id === model.id ? 1.1 : 1 },
                   ],
                 },
               ]}
-              onPress={() => handlePoiPress(poi)}
+              onPress={() => handlePoiPress(model)}
             >
-              <Text style={styles.poiTitle}>{poi.title}</Text>
-              {activePoint?.id === poi.id && (
+              <Text style={styles.poiTitle}>{model.title}</Text>
+              {activePoint?.id === model.id && (
                 <View style={styles.poiContent}>
-                  <Text style={styles.poiDescription}>{poi.description}</Text>
-                  {poi.interactionPoints?.map((point, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.interactionPoint}
-                      onPress={() => {
-                        // TODO: Handle interaction point action
-                      }}
-                    >
-                      <MaterialIcons name="touch-app" size={24} color="#ffffff" />
-                      <Text style={styles.interactionText}>{point.content}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  <Text style={styles.poiDescription}>{model.description}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -271,7 +298,10 @@ const ARViewScreen = ({ route, navigation }) => {
         <View style={styles.controls}>
           <TouchableOpacity 
             style={styles.closeButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              navigation.goBack();
+            }}
           >
             <MaterialIcons name="close" size={24} color="#ffffff" />
           </TouchableOpacity>
@@ -280,6 +310,7 @@ const ARViewScreen = ({ route, navigation }) => {
             style={styles.audioButton}
             onPress={() => {
               setAudioEnabled(!audioEnabled);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               Object.values(soundObjects).forEach(sound => {
                 audioEnabled ? sound.pauseAsync() : sound.playAsync();
               });
@@ -296,7 +327,7 @@ const ARViewScreen = ({ route, navigation }) => {
             <Text style={styles.infoTitle}>{location?.title}</Text>
             <Text style={styles.infoText}>
               {activePoint
-                ? "Tap interaction points to learn more"
+                ? activePoint.description
                 : "Point your camera at the location to see historical details"}
             </Text>
           </View>
@@ -349,21 +380,6 @@ const styles = StyleSheet.create({
   poiDescription: {
     color: '#ffffff',
     fontSize: 14,
-    marginBottom: 8,
-  },
-  interactionPoint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    padding: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  interactionText: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
   },
   controls: {
     position: 'absolute',

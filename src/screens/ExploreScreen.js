@@ -11,15 +11,48 @@ import {
   Linking,
   Alert,
   Dimensions,
+  useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { getNearbyLocations } from '../services/supabase';
 import { generateHistoricalStory } from '../services/ai';
 
-const LocationCard = ({ location, onPress, onARPress }) => {
+const CHALLENGES = [
+  {
+    id: 'daily',
+    title: 'Daily Explorer',
+    description: 'Visit 3 new historical sites today',
+    points: 100,
+    icon: 'explore',
+    progress: 0,
+    target: 3,
+  },
+  {
+    id: 'photographer',
+    title: 'History Photographer',
+    description: 'Share 5 photos of historical landmarks',
+    points: 150,
+    icon: 'camera-alt',
+    progress: 2,
+    target: 5,
+  },
+  {
+    id: 'storyteller',
+    title: 'Local Storyteller',
+    description: 'Submit 2 historical stories',
+    points: 200,
+    icon: 'history-edu',
+    progress: 0,
+    target: 2,
+  },
+];
+
+const LocationCard = ({ location, onPress, onARPress, colorScheme }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
@@ -35,10 +68,26 @@ const LocationCard = ({ location, onPress, onARPress }) => {
     }).start();
   };
 
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  };
+
+  const handleARPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onARPress(location);
+  };
+
   return (
-    <Animated.View style={[styles.locationCard, { transform: [{ scale: scaleAnim }] }]}>
+    <Animated.View 
+      style={[
+        styles.locationCard,
+        colorScheme === 'dark' && styles.locationCardDark,
+        { transform: [{ scale: scaleAnim }] }
+      ]}
+    >
       <TouchableOpacity
-        onPress={onPress}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={0.7}
@@ -52,7 +101,12 @@ const LocationCard = ({ location, onPress, onARPress }) => {
         )}
         <View style={styles.locationContent}>
           <View style={styles.locationHeader}>
-            <Text style={styles.locationTitle}>{location.title}</Text>
+            <Text style={[
+              styles.locationTitle,
+              colorScheme === 'dark' && styles.locationTitleDark
+            ]}>
+              {location.title}
+            </Text>
             {location.rating && (
               <View style={styles.ratingContainer}>
                 <MaterialIcons name="star" size={16} color="#fbbf24" />
@@ -61,17 +115,56 @@ const LocationCard = ({ location, onPress, onARPress }) => {
             )}
           </View>
 
-          <Text style={styles.locationDescription} numberOfLines={2}>
-            {location.description}
-          </Text>
+          <TouchableOpacity onPress={() => setIsExpanded(!isExpanded)}>
+            <Text 
+              style={[
+                styles.locationDescription,
+                colorScheme === 'dark' && styles.locationDescriptionDark,
+                !isExpanded && styles.truncatedText
+              ]}
+              numberOfLines={isExpanded ? undefined : 2}
+            >
+              {location.description}
+            </Text>
+          </TouchableOpacity>
+
+          {location.aiGeneratedStory && (
+            <View style={styles.aiInsights}>
+              <Text style={[
+                styles.aiInsightsTitle,
+                colorScheme === 'dark' && styles.aiInsightsTitleDark
+              ]}>
+                AI Insights
+              </Text>
+              <View style={styles.factsList}>
+                {location.aiGeneratedStory.facts.slice(0, 2).map((fact, index) => (
+                  <View key={index} style={styles.factItem}>
+                    <MaterialIcons name="lightbulb" size={16} color="#3b82f6" />
+                    <Text style={[
+                      styles.factText,
+                      colorScheme === 'dark' && styles.factTextDark
+                    ]}>
+                      {fact}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           <View style={styles.locationFooter}>
             <View style={styles.locationMetrics}>
-              <Text style={styles.locationDistance}>
+              <Text style={[
+                styles.locationDistance,
+                colorScheme === 'dark' && styles.locationDistanceDark
+              ]}>
                 {location.distance ? `${(location.distance / 1000).toFixed(1)} km away` : ''}
               </Text>
               {location.visitCount > 0 && (
-                <Text style={styles.visitCount}>
+                <Text style={[
+                  styles.visitCount,
+                  colorScheme === 'dark' && styles.visitCountDark
+                ]}>
                   {location.visitCount} {location.visitCount === 1 ? 'visit' : 'visits'}
                 </Text>
               )}
@@ -79,15 +172,21 @@ const LocationCard = ({ location, onPress, onARPress }) => {
 
             <View style={styles.badgeContainer}>
               {location.hasStories && (
-                <View style={styles.badge}>
+                <TouchableOpacity
+                  style={styles.badge}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    // TODO: Show stories
+                  }}
+                >
                   <MaterialIcons name="history-edu" size={14} color="#3b82f6" />
                   <Text style={styles.badgeText}>Stories</Text>
-                </View>
+                </TouchableOpacity>
               )}
               {location.hasAR && (
                 <TouchableOpacity
                   style={[styles.badge, styles.arBadge]}
-                  onPress={() => onARPress(location)}
+                  onPress={handleARPress}
                 >
                   <MaterialIcons name="view-in-ar" size={14} color="#3b82f6" />
                   <Text style={styles.badgeText}>AR</Text>
@@ -101,6 +200,48 @@ const LocationCard = ({ location, onPress, onARPress }) => {
   );
 };
 
+const ChallengeCard = ({ challenge, colorScheme }) => (
+  <View style={[
+    styles.challengeCard,
+    colorScheme === 'dark' && styles.challengeCardDark
+  ]}>
+    <View style={styles.challengeIcon}>
+      <MaterialIcons name={challenge.icon} size={24} color="#3b82f6" />
+    </View>
+    <View style={styles.challengeContent}>
+      <Text style={[
+        styles.challengeTitle,
+        colorScheme === 'dark' && styles.challengeTitleDark
+      ]}>
+        {challenge.title}
+      </Text>
+      <Text style={[
+        styles.challengeDescription,
+        colorScheme === 'dark' && styles.challengeDescriptionDark
+      ]}>
+        {challenge.description}
+      </Text>
+      <View style={styles.challengeProgress}>
+        <View style={styles.progressBar}>
+          <View 
+            style={[
+              styles.progressFill,
+              { width: `${(challenge.progress / challenge.target) * 100}%` }
+            ]}
+          />
+        </View>
+        <Text style={styles.progressText}>
+          {challenge.progress}/{challenge.target}
+        </Text>
+      </View>
+      <View style={styles.challengeReward}>
+        <MaterialIcons name="stars" size={16} color="#fbbf24" />
+        <Text style={styles.rewardText}>{challenge.points} points</Text>
+      </View>
+    </View>
+  </View>
+);
+
 const ExploreScreen = ({ navigation }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +250,9 @@ const ExploreScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [permissionStatus, setPermissionStatus] = useState(null);
+  const [showChallenges, setShowChallenges] = useState(false);
+  
+  const colorScheme = useColorScheme();
 
   const filters = [
     { id: 'all', label: 'All', icon: 'public' },
@@ -166,7 +310,6 @@ const ExploreScreen = ({ navigation }) => {
           text: 'Not Now',
           style: 'cancel',
           onPress: () => {
-            // Load non-location based content
             fetchNearbyLocations(true);
           },
         },
@@ -198,7 +341,6 @@ const ExploreScreen = ({ navigation }) => {
           selectedFilter
         );
       } else {
-        // Fetch general locations without proximity sorting
         nearbyLocations = await getNearbyLocations(
           null,
           null,
@@ -212,6 +354,7 @@ const ExploreScreen = ({ navigation }) => {
           try {
             const story = await generateHistoricalStory(loc, {
               interests: ['history', 'architecture'], // TODO: Get from user preferences
+              previousVisits: [], // TODO: Get from local storage
             });
             return {
               ...loc,
@@ -253,6 +396,7 @@ const ExploreScreen = ({ navigation }) => {
       location={item}
       onPress={() => handleLocationPress(item)}
       onARPress={() => handleARPress(item)}
+      colorScheme={colorScheme}
     />
   );
 
@@ -266,7 +410,10 @@ const ExploreScreen = ({ navigation }) => {
               styles.filterButton,
               selectedFilter === filter.id && styles.filterButtonActive,
             ]}
-            onPress={() => setSelectedFilter(filter.id)}
+            onPress={() => {
+              setSelectedFilter(filter.id);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
           >
             <MaterialIcons
               name={filter.icon}
@@ -284,24 +431,59 @@ const ExploreScreen = ({ navigation }) => {
           </TouchableOpacity>
         ))}
       </View>
+
+      {showChallenges && (
+        <View style={styles.challengesContainer}>
+          <Text style={[
+            styles.challengesTitle,
+            colorScheme === 'dark' && styles.challengesTitleDark
+          ]}>
+            Daily Challenges
+          </Text>
+          <FlatList
+            horizontal
+            data={CHALLENGES}
+            renderItem={({ item }) => (
+              <ChallengeCard challenge={item} colorScheme={colorScheme} />
+            )}
+            keyExtractor={item => item.id}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.challengesList}
+          />
+        </View>
+      )}
     </View>
   );
 
   if (loading && !refreshing) {
     return (
-      <View style={styles.centerContainer}>
+      <View style={[
+        styles.centerContainer,
+        colorScheme === 'dark' && styles.centerContainerDark
+      ]}>
         <MaterialIcons name="explore" size={48} color="#3b82f6" />
-        <Text style={styles.messageText}>Finding nearby historical sites...</Text>
+        <Text style={[
+          styles.messageText,
+          colorScheme === 'dark' && styles.messageTextDark
+        ]}>
+          Finding nearby historical sites...
+        </Text>
       </View>
     );
   }
 
   if (permissionStatus === 'denied' && !locations.length) {
     return (
-      <View style={styles.centerContainer}>
+      <View style={[
+        styles.centerContainer,
+        colorScheme === 'dark' && styles.centerContainerDark
+      ]}>
         <MaterialIcons name="location-off" size={48} color="#ef4444" />
         <Text style={styles.errorText}>Location access is required</Text>
-        <Text style={styles.messageText}>
+        <Text style={[
+          styles.messageText,
+          colorScheme === 'dark' && styles.messageTextDark
+        ]}>
           Please enable location access to discover historical sites near you.
         </Text>
         <TouchableOpacity style={styles.retryButton} onPress={openSettings}>
@@ -313,10 +495,16 @@ const ExploreScreen = ({ navigation }) => {
 
   if (error && !locations.length) {
     return (
-      <View style={styles.centerContainer}>
+      <View style={[
+        styles.centerContainer,
+        colorScheme === 'dark' && styles.centerContainerDark
+      ]}>
         <MaterialIcons name="error-outline" size={48} color="#ef4444" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => fetchNearbyLocations()}>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={() => fetchNearbyLocations()}
+        >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -324,10 +512,29 @@ const ExploreScreen = ({ navigation }) => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.pointsBanner}>
+    <SafeAreaView style={[
+      styles.container,
+      colorScheme === 'dark' && styles.containerDark
+    ]}>
+      <View style={[
+        styles.pointsBanner,
+        colorScheme === 'dark' && styles.pointsBannerDark
+      ]}>
         <MaterialIcons name="stars" size={20} color="#fbbf24" />
         <Text style={styles.pointsText}>{userPoints} points</Text>
+        <TouchableOpacity
+          style={styles.challengesButton}
+          onPress={() => {
+            setShowChallenges(!showChallenges);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }}
+        >
+          <MaterialIcons
+            name={showChallenges ? "expand-less" : "expand-more"}
+            size={24}
+            color="#fbbf24"
+          />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -338,9 +545,21 @@ const ExploreScreen = ({ navigation }) => {
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <MaterialIcons name="location-off" size={48} color="#64748b" />
-            <Text style={styles.messageText}>No historical sites found</Text>
-            <Text style={styles.submessageText}>
+            <MaterialIcons
+              name="location-off"
+              size={48}
+              color={colorScheme === 'dark' ? '#64748b' : '#94a3b8'}
+            />
+            <Text style={[
+              styles.messageText,
+              colorScheme === 'dark' && styles.messageTextDark
+            ]}>
+              No historical sites found
+            </Text>
+            <Text style={[
+              styles.submessageText,
+              colorScheme === 'dark' && styles.submessageTextDark
+            ]}>
               Try adjusting your filters or exploring a different area
             </Text>
           </View>
@@ -352,14 +571,20 @@ const ExploreScreen = ({ navigation }) => {
       <View style={styles.fabContainer}>
         <TouchableOpacity
           style={[styles.fab, styles.arFab]}
-          onPress={() => navigation.navigate('ARView')}
+          onPress={() => {
+            navigation.navigate('ARView');
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
         >
           <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
         </TouchableOpacity>
         
         <TouchableOpacity
           style={[styles.fab, styles.createFab]}
-          onPress={() => navigation.navigate('CreateStory')}
+          onPress={() => {
+            navigation.navigate('CreateStory');
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
         >
           <MaterialIcons name="add" size={24} color="#ffffff" />
         </TouchableOpacity>
@@ -371,6 +596,9 @@ const ExploreScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  containerDark: {
     backgroundColor: '#0f172a',
   },
   header: {
@@ -384,16 +612,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
+  pointsBannerDark: {
+    backgroundColor: 'rgba(251, 191, 36, 0.05)',
+  },
   pointsText: {
     color: '#fbbf24',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+    flex: 1,
+  },
+  challengesButton: {
+    padding: 4,
   },
   filterContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#f1f5f9',
     borderRadius: 12,
     padding: 4,
   },
@@ -418,11 +653,107 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     fontWeight: '600',
   },
+  challengesContainer: {
+    marginTop: 16,
+  },
+  challengesTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  challengesTitleDark: {
+    color: '#ffffff',
+  },
+  challengesList: {
+    paddingRight: 16,
+  },
+  challengeCard: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    width: 280,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  challengeCardDark: {
+    backgroundColor: '#1e293b',
+  },
+  challengeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  challengeContent: {
+    flex: 1,
+  },
+  challengeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  challengeTitleDark: {
+    color: '#ffffff',
+  },
+  challengeDescription: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 8,
+  },
+  challengeDescriptionDark: {
+    color: '#94a3b8',
+  },
+  challengeProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressBar: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 2,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  challengeReward: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rewardText: {
+    fontSize: 12,
+    color: '#fbbf24',
+    marginLeft: 4,
+  },
   listContainer: {
     padding: 16,
   },
   locationCard: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     marginBottom: 16,
     overflow: 'hidden',
@@ -430,13 +761,16 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
       },
       android: {
-        elevation: 5,
+        elevation: 3,
       },
     }),
+  },
+  locationCardDark: {
+    backgroundColor: '#1e293b',
   },
   locationImage: {
     width: '100%',
@@ -455,8 +789,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#0f172a',
     marginRight: 8,
+  },
+  locationTitleDark: {
+    color: '#ffffff',
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -474,8 +811,45 @@ const styles = StyleSheet.create({
   },
   locationDescription: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: '#64748b',
     marginBottom: 12,
+  },
+  locationDescriptionDark: {
+    color: '#94a3b8',
+  },
+  truncatedText: {
+    marginBottom: 4,
+  },
+  aiInsights: {
+    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  aiInsightsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 8,
+  },
+  aiInsightsTitleDark: {
+    color: '#ffffff',
+  },
+  factsList: {
+    gap: 8,
+  },
+  factItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  factText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginLeft: 8,
+    flex: 1,
+  },
+  factTextDark: {
+    color: '#94a3b8',
   },
   locationFooter: {
     flexDirection: 'row',
@@ -490,9 +864,15 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 4,
   },
+  locationDistanceDark: {
+    color: '#94a3b8',
+  },
   visitCount: {
     fontSize: 12,
     color: '#64748b',
+  },
+  visitCountDark: {
+    color: '#94a3b8',
   },
   badgeContainer: {
     flexDirection: 'row',
@@ -550,6 +930,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#ffffff',
+  },
+  centerContainerDark: {
+    backgroundColor: '#0f172a',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -557,15 +941,21 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    color: '#94a3b8',
+    color: '#64748b',
     textAlign: 'center',
     marginTop: 16,
   },
+  messageTextDark: {
+    color: '#94a3b8',
+  },
   submessageText: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#94a3b8',
     textAlign: 'center',
     marginTop: 8,
+  },
+  submessageTextDark: {
+    color: '#64748b',
   },
   errorText: {
     fontSize: 16,
