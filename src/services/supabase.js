@@ -81,6 +81,48 @@ export const clearLocations = async () => {
   }
 };
 
+export const getLocationDetails = async (locationId) => {
+  try {
+    const { data: location, error: locationError } = await adminClient
+      .from('locations')
+      .select(`
+        *,
+        ai_generated_stories (
+          content
+        )
+      `)
+      .eq('id', locationId)
+      .single();
+
+    if (locationError) {
+      console.error('Error fetching location:', locationError);
+      throw locationError;
+    }
+
+    const story = location.ai_generated_stories?.[0]?.content;
+
+    return {
+      id: location.id,
+      title: location.title,
+      description: location.description,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      imageUrl: location.image_url,
+      rating: location.rating,
+      visitCount: location.visit_count,
+      hasStories: !!story,
+      hasAR: false,
+      period: location.historical_period,
+      category: location.category,
+      lastUpdated: location.updated_at,
+      aiGeneratedStory: story
+    };
+  } catch (error) {
+    console.error('Error getting location details:', error);
+    throw error;
+  }
+};
+
 // Location functions
 export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000) => {
   try {
