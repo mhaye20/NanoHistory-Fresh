@@ -1,126 +1,94 @@
 import env from '../config/env';
 import { supabase } from './supabase';
-import * as Location from 'expo-location';
 
-// Helper function to simulate API delay for development
-const simulateDelay = () => new Promise(resolve => setTimeout(resolve, 1000));
-
-// Enhanced function to generate personalized historical stories
+// Enhanced function to generate personalized historical stories using Vertex AI
 export const generateHistoricalStory = async (location, userPreferences = {}) => {
   const { interests = [], languagePreference = 'en', accessibilityNeeds = [], previousVisits = [] } = userPreferences;
 
-  if (!env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT) {
-    await simulateDelay();
-    
-    // Enhanced personalization logic
-    const interestBasedContent = interests.map(interest => {
-      switch(interest.toLowerCase()) {
-        case 'architecture':
-          return 'The architectural style reflects the period\'s innovative building techniques.';
-        case 'culture':
-          return 'This site played a crucial role in shaping local traditions.';
-        case 'military':
-          return 'Strategic importance made this location vital during historical conflicts.';
-        default:
-          return 'This location holds significant historical value.';
-      }
-    }).join(' ');
-
-    // Adapt content based on previous visits
-    const visitContext = previousVisits.length > 0 
-      ? 'Since your last visit, new historical evidence has emerged.'
-      : 'First-time visitors often find these details fascinating.';
-
-    // Generate dynamic story elements
-    const timeOfDay = new Date().getHours();
-    const atmosphericContext = timeOfDay >= 18 || timeOfDay < 6
-      ? 'As night falls, imagine the historical events that unfolded here.'
-      : 'In the daylight, you can clearly see the historical markers.';
-
-    return {
-      story: `${interestBasedContent} ${visitContext} ${atmosphericContext}`,
-      facts: [
-        "Established in 1885",
-        "Renovated in 1923",
-        "Hosted several significant community events",
-        "Featured in historical documents from 1900",
-      ],
-      audioUrl: null,
-      simplifiedVersion: accessibilityNeeds.includes('cognitive')
-        ? "This is an important old place. Many interesting things happened here."
-        : null,
-      gamificationPoints: calculatePoints(interests, previousVisits),
-      suggestedNextLocations: generateSuggestedLocations(location, interests),
-      arContent: {
-        models: [
-          {
-            id: 'building-1885',
-            name: 'Original Structure',
-            description: 'View the building as it appeared in 1885',
-            url: 'https://example.com/models/building-1885.glb',
-          },
-          {
-            id: 'event-1923',
-            name: 'Historical Event',
-            description: 'Experience the renovation of 1923',
-            url: 'https://example.com/models/event-1923.glb',
-          },
-        ],
-        hotspots: [
-          {
-            id: 'entrance',
-            title: 'Main Entrance',
-            description: 'Original doorway from 1885',
-            position: { x: 0, y: 1.6, z: -2 },
-          },
-          {
-            id: 'plaque',
-            title: 'Historical Plaque',
-            description: 'Commemorating the 1923 renovation',
-            position: { x: 1, y: 1.4, z: -1 },
-          },
-        ],
-      },
-    };
-  }
-
   try {
-    const response = await fetch(`${env.getGoogleCloudEndpoint()}/generateStory`, {
+    // First check cache
+    const { data: cachedStory } = await supabase
+      .from('ai_generated_stories')
+      .select('content')
+      .eq('location_id', location.id)
+      .single();
+
+    if (cachedStory) {
+      console.log('Using cached story for location:', location.id);
+      return {
+        ...cachedStory.content,
+        audioUrl: null,
+        simplifiedVersion: accessibilityNeeds.includes('cognitive')
+          ? cachedStory.content.story.split('.').slice(0, 3).join('.') + '.'
+          : null,
+      };
+    }
+
+    // Call our Vercel serverless function
+    const response = await fetch('https://micro-history.vercel.app/api/generate-story', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        location, 
+      body: JSON.stringify({
+        location: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+        },
         userPreferences: {
           interests,
           languagePreference,
-          accessibilityNeeds,
-          previousVisits,
         }
-      }),
+      })
     });
 
-    if (!response.ok) throw new Error('Failed to generate story');
-    const storyData = await response.json();
-
-    // Generate audio version if needed
-    if (accessibilityNeeds.includes('visual')) {
-      try {
-        const audioBlob = await generateVoice(
-          storyData.simplifiedVersion || storyData.story,
-          { language: languagePreference }
-        );
-        storyData.audioUrl = URL.createObjectURL(audioBlob);
-      } catch (error) {
-        console.warn('Voice synthesis failed:', error);
-      }
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('AI service error:', error);
+      throw new Error(error.details || 'Failed to generate story');
     }
 
-    return storyData;
+    const generatedContent = await response.json();
+
+    // Store the generated story in Supabase for future use
+    const { error: cacheError } = await supabase.from('ai_generated_stories').upsert([
+      {
+        location_id: location.id,
+        content: generatedContent,
+        created_at: new Date().toISOString(),
+      }
+    ]);
+
+    if (cacheError) {
+      console.error('Error caching story:', cacheError);
+    }
+
+    return {
+      story: generatedContent.story,
+      facts: generatedContent.facts,
+      historicalPeriods: generatedContent.historicalPeriods,
+      suggestedActivities: generatedContent.suggestedActivities,
+      audioUrl: null,
+      simplifiedVersion: accessibilityNeeds.includes('cognitive')
+        ? generatedContent.story.split('.').slice(0, 3).join('.') + '.'
+        : null,
+    };
   } catch (error) {
     console.error('Error generating story:', error);
-    throw error;
+    
+    // Return a basic response when AI generation fails
+    return {
+      story: `Discover the history of this location at ${location.latitude}, ${location.longitude}. Every place has a story waiting to be told.`,
+      facts: [
+        "This location has historical significance",
+        "Local landmarks tell stories of the past",
+        "Communities have gathered here over time",
+      ],
+      historicalPeriods: ["Modern Era"],
+      suggestedActivities: ["Explore the surroundings", "Research local history"],
+      audioUrl: null,
+      simplifiedVersion: null,
+    };
   }
 };
 
@@ -206,9 +174,11 @@ export const generateARContent = async (location, userContext = {}) => {
   }
 
   try {
-    const response = await fetch(`${env.getGoogleCloudEndpoint()}/generateARContent`, {
+    const response = await fetch('https://micro-history.vercel.app/api/generate-ar-content', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ location, userContext }),
     });
 
@@ -271,9 +241,11 @@ export const getAIResponse = async (query, context = {}) => {
   }
 
   try {
-    const response = await fetch(`${env.getGoogleCloudEndpoint()}/chat`, {
+    const response = await fetch('https://micro-history.vercel.app/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ query, context }),
     });
 
@@ -374,7 +346,9 @@ export const submitUserContent = async (content) => {
   }
 };
 
-// Helper functions
+// Helper function to simulate API delay for development
+const simulateDelay = () => new Promise(resolve => setTimeout(resolve, 1000));
+
 const calculatePoints = (interests, previousVisits) => {
   let points = 50; // Base points
   points += interests.length * 10; // Points for each interest

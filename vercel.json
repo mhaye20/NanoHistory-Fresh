@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "functions": {
+    "api/generate-story.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "GOOGLE_CLOUD_PROJECT": "@google_cloud_project",
+    "GOOGLE_CLOUD_LOCATION": "@google_cloud_location",
+    "GOOGLE_CREDENTIALS": "@google_credentials"
+  },
+  "build": {
+    "env": {
+      "GOOGLE_CLOUD_PROJECT": "@google_cloud_project",
+      "GOOGLE_CLOUD_LOCATION": "@google_cloud_location",
+      "GOOGLE_CREDENTIALS": "@google_credentials"
+    }
+  }
+}
