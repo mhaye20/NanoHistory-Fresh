@@ -1,28 +1,73 @@
 {
   "expo": {
-    "name": "NanoHistory-Fresh",
-    "slug": "NanoHistory-Fresh",
+    "name": "NanoHistory",
+    "slug": "nanohistory",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0f172a"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nanohistory.app",
+      "newArchEnabled": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera for AR experiences and photo uploads.",
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to discover nearby historical sites.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses your location to discover nearby historical sites and provide real-time updates.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone for voice interactions with the AI guide.",
+        "UIBackgroundModes": ["location", "fetch"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.nanohistory.app",
+      "newArchEnabled": true,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow NanoHistory to access your camera to enable AR features and photo uploads."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow NanoHistory to use your location to discover nearby historical sites.",
+          "locationAlwaysPermission": "Allow NanoHistory to use your location in the background to discover nearby historical sites.",
+          "locationWhenInUsePermission": "Allow NanoHistory to use your location to discover nearby historical sites."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "nanohistory"
+      }
+    },
+    "owner": "nanohistory",
+    "experiments": {
+      "tsconfigPaths": true
     }
   }
 }
