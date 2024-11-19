@@ -8,11 +8,31 @@
     "api/health.js": {
       "memory": 128,
       "maxDuration": 5
+    },
+    "api/users/pre-register.js": {
+      "memory": 128,
+      "maxDuration": 5
+    },
+    "api/users/verify.js": {
+      "memory": 128,
+      "maxDuration": 5
+    },
+    "api/users/resend-verification.js": {
+      "memory": 128,
+      "maxDuration": 5
+    },
+    "api/users/send-email.js": {
+      "memory": 128,
+      "maxDuration": 10
     }
   },
   "rewrites": [
     { "source": "/api/health", "destination": "/api/health.js" },
-    { "source": "/api/generate-story", "destination": "/api/generate-story.js" }
+    { "source": "/api/generate-story", "destination": "/api/generate-story.js" },
+    { "source": "/api/users/pre-register", "destination": "/api/users/pre-register.js" },
+    { "source": "/api/users/verify", "destination": "/api/users/verify.js" },
+    { "source": "/api/users/resend-verification", "destination": "/api/users/resend-verification.js" },
+    { "source": "/api/users/send-email", "destination": "/api/users/send-email.js" }
   ],
   "headers": [
     {

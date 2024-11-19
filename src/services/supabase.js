@@ -5,26 +5,41 @@ import { Platform } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import env from '../config/env';
 
+// Debug logging function
+const logDebug = (context, message, data = null) => {
+  console.log(`[${context}] ${message}`, data ? data : '');
+};
+
+// Error logging function
+const logError = (context, error, additionalInfo = null) => {
+  console.error(`[${context}] Error:`, error);
+  if (error.message) console.error(`[${context}] Message:`, error.message);
+  if (error.status) console.error(`[${context}] Status:`, error.status);
+  if (error.statusText) console.error(`[${context}] Status Text:`, error.statusText);
+  if (error.data) console.error(`[${context}] Error Data:`, error.data);
+  if (additionalInfo) console.error(`[${context}] Additional Info:`, additionalInfo);
+};
+
 // SecureStore adapter for Supabase auth persistence
 const ExpoSecureStoreAdapter = {
   getItem: (key) => {
+    logDebug('SecureStore', `Getting item: ${key}`);
     return SecureStore.getItemAsync(key);
   },
   setItem: (key, value) => {
+    logDebug('SecureStore', `Setting item: ${key}`);
     return SecureStore.setItemAsync(key, value);
   },
   removeItem: (key) => {
+    logDebug('SecureStore', `Removing item: ${key}`);
     return SecureStore.deleteItemAsync(key);
   },
 };
 
 // Get the redirect URL based on platform
 const getRedirectUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:19006/auth/callback';
-  }
-  // Get the app's deep link URL
-  return ExpoLinking.createURL('auth/callback');
+  // Use a simpler redirect URL format
+  return 'nanohistory://';
 };
 
 // Initialize Supabase client with anon key for auth
@@ -36,12 +51,25 @@ export const supabase = createClient(
       storage: ExpoSecureStoreAdapter,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
       flowType: 'pkce',
-      redirectTo: getRedirectUrl(),
+      debug: true, // Enable Supabase's internal debug logging
+      onAuthStateChange: (event, session) => {
+        logDebug('Auth', `Auth state changed: ${event}`, {
+          session: session ? 'Session exists' : 'No session',
+          user: session?.user?.email,
+        });
+      },
     },
   }
 );
+
+// Log Supabase configuration
+logDebug('Supabase', 'Configuration', {
+  url: env.EXPO_PUBLIC_SUPABASE_URL,
+  authFlow: 'pkce',
+  redirectUrl: getRedirectUrl(),
+});
 
 // Initialize admin client with service role key for database operations
 const adminClient = createClient(
@@ -59,7 +87,7 @@ let locationsCache = {
 // Clear all locations from the database
 export const clearLocations = async () => {
   try {
-    console.log('Clearing existing locations...');
+    logDebug('Locations', 'Clearing existing locations...');
     
     // First clear AI generated stories
     const { error: aiError } = await adminClient
@@ -68,7 +96,7 @@ export const clearLocations = async () => {
       .not('id', 'is', null);
 
     if (aiError) {
-      console.error('Error clearing AI stories:', aiError);
+      logError('Locations', aiError, 'Error clearing AI stories');
       throw aiError;
     }
 
@@ -79,7 +107,7 @@ export const clearLocations = async () => {
       .not('id', 'is', null);
 
     if (storiesError) {
-      console.error('Error clearing stories:', storiesError);
+      logError('Locations', storiesError, 'Error clearing stories');
       throw storiesError;
     }
 
@@ -90,7 +118,7 @@ export const clearLocations = async () => {
       .not('id', 'is', null);
 
     if (locationsError) {
-      console.error('Error clearing locations:', locationsError);
+      logError('Locations', locationsError, 'Error clearing locations');
       throw locationsError;
     }
 
@@ -98,15 +126,17 @@ export const clearLocations = async () => {
     locationsCache.data = null;
     locationsCache.timestamp = null;
 
-    console.log('All locations cleared from database');
+    logDebug('Locations', 'All locations cleared from database');
   } catch (error) {
-    console.error('Error clearing locations:', error);
+    logError('Locations', error);
     throw error;
   }
 };
 
 export const getLocationDetails = async (locationId) => {
   try {
+    logDebug('Locations', 'Fetching location details', { locationId });
+
     const { data: location, error: locationError } = await adminClient
       .from('locations')
       .select(`
@@ -120,14 +150,14 @@ export const getLocationDetails = async (locationId) => {
       .single();
 
     if (locationError) {
-      console.error('Error fetching location:', locationError);
+      logError('Locations', locationError, { locationId });
       throw locationError;
     }
 
     const aiStory = location.ai_generated_stories?.[0]?.content;
     const hasUserStories = location.stories && location.stories.length > 0;
 
-    return {
+    const transformedLocation = {
       id: location.id,
       title: location.title,
       description: location.description,
@@ -144,18 +174,33 @@ export const getLocationDetails = async (locationId) => {
       aiGeneratedStory: aiStory,
       userStories: location.stories || []
     };
+
+    logDebug('Locations', 'Location details fetched', { 
+      locationId,
+      hasStories: hasUserStories,
+      hasAiStory: !!aiStory
+    });
+
+    return transformedLocation;
   } catch (error) {
-    console.error('Error getting location details:', error);
+    logError('Locations', error, { locationId });
     throw error;
   }
 };
 
 export const getNearbyLocations = async (latitude, longitude, filter = 'all', radius = 5000, page = 1, limit = 10) => {
   try {
-    console.log('Getting nearby locations with:', { latitude, longitude, filter, radius, page, limit });
+    logDebug('Locations', 'Getting nearby locations', { 
+      latitude, 
+      longitude, 
+      filter, 
+      radius, 
+      page, 
+      limit 
+    });
 
     if (!latitude || !longitude) {
-      console.error('No location provided');
+      logError('Locations', new Error('No location provided'));
       return { locations: [], hasMore: false };
     }
 
@@ -170,7 +215,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       });
 
     if (distanceError) {
-      console.error('Error calculating distances:', distanceError);
+      logError('Locations', distanceError, { latitude, longitude, radius });
       return { locations: [], hasMore: false };
     }
 
@@ -217,7 +262,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     const { data: locations, error: locationsError, count } = await query;
 
     if (locationsError) {
-      console.error('Error fetching locations:', locationsError);
+      logError('Locations', locationsError);
       return { locations: [], hasMore: false };
     }
 
@@ -255,19 +300,26 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       transformedLocations.sort((a, b) => a.distance - b.distance);
     }
 
+    logDebug('Locations', 'Nearby locations fetched', {
+      found: transformedLocations.length,
+      total: count,
+      hasMore: offset + limit < count
+    });
+
     return {
       locations: transformedLocations,
       hasMore: offset + limit < count
     };
 
   } catch (error) {
-    console.error('Error in getNearbyLocations:', error);
+    logError('Locations', error, { latitude, longitude, filter });
     return { locations: [], hasMore: false };
   }
 };
 
 export const createStory = async (storyData) => {
   try {
+    logDebug('Stories', 'Creating new story', storyData);
     const { latitude, longitude, ...rest } = storyData;
 
     // First, check if a location exists at these coordinates
@@ -279,7 +331,7 @@ export const createStory = async (storyData) => {
       });
 
     if (distanceError) {
-      console.error('Error finding nearest location:', distanceError);
+      logError('Stories', distanceError, 'Error finding nearest location');
       throw distanceError;
     }
 
@@ -288,6 +340,7 @@ export const createStory = async (storyData) => {
     if (distances && distances.length > 0) {
       // Use closest existing location
       locationId = distances[0].id;
+      logDebug('Stories', 'Using existing location', { locationId });
     } else {
       // Create new location
       const { data: newLocation, error: createLocationError } = await adminClient
@@ -305,11 +358,12 @@ export const createStory = async (storyData) => {
         .single();
 
       if (createLocationError) {
-        console.error('Error creating location:', createLocationError);
+        logError('Stories', createLocationError, 'Error creating location');
         throw createLocationError;
       }
 
       locationId = newLocation.id;
+      logDebug('Stories', 'Created new location', { locationId });
     }
 
     // Create the story with the location ID
@@ -326,7 +380,7 @@ export const createStory = async (storyData) => {
       .single();
 
     if (storyError) {
-      console.error('Error creating story:', storyError);
+      logError('Stories', storyError, 'Error creating story');
       throw storyError;
     }
 
@@ -337,18 +391,24 @@ export const createStory = async (storyData) => {
       .eq('id', locationId);
 
     if (updateError) {
-      console.error('Error updating location timestamp:', updateError);
+      logError('Stories', updateError, 'Error updating location timestamp');
     }
+
+    logDebug('Stories', 'Story created successfully', { 
+      storyId: story.id,
+      locationId
+    });
 
     return story;
   } catch (error) {
-    console.error('Error in createStory:', error);
+    logError('Stories', error);
     throw error;
   }
 };
 
 export const createLocation = async (locationData) => {
   try {
+    logDebug('Locations', 'Creating new location', locationData);
     const { latitude, longitude, ...rest } = locationData;
     
     const { data, error } = await adminClient
@@ -364,15 +424,21 @@ export const createLocation = async (locationData) => {
       .select();
 
     if (error) throw error;
+
+    logDebug('Locations', 'Location created successfully', { 
+      locationId: data[0].id 
+    });
+
     return data[0];
   } catch (error) {
-    console.error('Error creating location:', error);
+    logError('Locations', error);
     throw error;
   }
 };
 
 export const updateLocation = async (id, updates) => {
   try {
+    logDebug('Locations', 'Updating location', { id, updates });
     const { data, error } = await adminClient
       .from('locations')
       .update({
@@ -383,29 +449,41 @@ export const updateLocation = async (id, updates) => {
       .select();
 
     if (error) throw error;
+
+    logDebug('Locations', 'Location updated successfully', { 
+      locationId: data[0].id 
+    });
+
     return data[0];
   } catch (error) {
-    console.error('Error updating location:', error);
+    logError('Locations', error, { id });
     throw error;
   }
 };
 
 export const incrementVisitCount = async (locationId) => {
   try {
+    logDebug('Locations', 'Incrementing visit count', { locationId });
     const { data, error } = await adminClient.rpc('increment_visit_count', {
       location_id: locationId
     });
 
     if (error) throw error;
+
+    logDebug('Locations', 'Visit count incremented successfully', { 
+      locationId 
+    });
+
     return data;
   } catch (error) {
-    console.error('Error incrementing visit count:', error);
+    logError('Locations', error, { locationId });
     throw error;
   }
 };
 
 export const getStories = async (locationId = null) => {
   try {
+    logDebug('Stories', 'Fetching stories', { locationId });
     let query = adminClient
       .from('stories')
       .select(`
@@ -422,68 +500,120 @@ export const getStories = async (locationId = null) => {
     const { data, error } = await query;
 
     if (error) throw error;
+
+    logDebug('Stories', 'Stories fetched successfully', { 
+      count: data.length,
+      locationId 
+    });
+
     return data;
   } catch (error) {
-    console.error('Error fetching stories:', error);
+    logError('Stories', error, { locationId });
     return [];
   }
 };
 
 export const signInWithEmail = async (email, password) => {
   try {
+    logDebug('Auth', 'Attempting sign in', { email });
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) throw error;
+
+    logDebug('Auth', 'Sign in successful', { 
+      email,
+      userId: data.user?.id 
+    });
+
     return data;
   } catch (error) {
-    console.error('Error signing in:', error.message);
+    logError('Auth', error, { email });
     throw error;
   }
 };
 
-export const signUpWithEmail = async (email, password) => {
+export const signUpWithEmail = async (email, password, options = {}) => {
   try {
+    logDebug('Auth', 'Attempting sign up', { 
+      email,
+      options: {
+        ...options,
+        emailRedirectTo: getRedirectUrl(),
+      }
+    });
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        ...options,
+        emailRedirectTo: getRedirectUrl(),
+        data: {
+          ...options.data,
+          email_confirmed: false,
+        },
+      },
     });
+
     if (error) throw error;
+
+    logDebug('Auth', 'Sign up response', {
+      user: data.user?.email,
+      sessionExists: !!data.session,
+      confirmationSent: !data.session,
+    });
+
     return data;
   } catch (error) {
-    console.error('Error signing up:', error.message);
+    logError('Auth', error, { 
+      email,
+      redirectUrl: getRedirectUrl(),
+      supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL
+    });
     throw error;
   }
 };
 
 export const signOut = async () => {
   try {
+    logDebug('Auth', 'Attempting sign out');
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    logDebug('Auth', 'Sign out successful');
   } catch (error) {
-    console.error('Error signing out:', error.message);
+    logError('Auth', error);
     throw error;
   }
 };
 
 export const uploadImage = async (filePath, file) => {
   try {
+    logDebug('Storage', 'Uploading image', { filePath });
     const { data, error } = await adminClient.storage
       .from('images')
       .upload(filePath, file);
 
     if (error) throw error;
+
+    logDebug('Storage', 'Image uploaded successfully', { 
+      filePath,
+      path: data.path 
+    });
+
     return data;
   } catch (error) {
-    console.error('Error uploading image:', error);
+    logError('Storage', error, { filePath });
     throw error;
   }
 };
 
 export const getImageUrl = (path) => {
   if (!path) return null;
-  return adminClient.storage.from('images').getPublicUrl(path).data.publicUrl;
+  const url = adminClient.storage.from('images').getPublicUrl(path).data.publicUrl;
+  logDebug('Storage', 'Generated image URL', { path, url });
+  return url;
 };
 
 export default {
