@@ -199,32 +199,9 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       limit 
     });
 
-    if (!latitude || !longitude) {
-      logError('Locations', new Error('No location provided'));
-      return { locations: [], hasMore: false };
-    }
-
     const offset = (page - 1) * limit;
-
-    // Get distances for all locations
-    const { data: distances, error: distanceError } = await adminClient
-      .rpc('calculate_distances', {
-        lat: latitude,
-        lng: longitude,
-        radius_meters: radius
-      });
-
-    if (distanceError) {
-      logError('Locations', distanceError, { latitude, longitude, radius });
-      return { locations: [], hasMore: false };
-    }
-
-    // Create a map of distances for faster lookup
-    const distanceMap = new Map(
-      distances.map(d => [d.id, Math.round(d.distance)])
-    );
-
     let query;
+
     if (filter === 'stories') {
       // For stories filter, join with the stories table to get locations with user stories
       query = adminClient
@@ -270,6 +247,24 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     let transformedLocations = locations.map(location => {
       const aiStory = location.ai_generated_stories?.[0]?.content;
       const hasUserStories = location.stories && location.stories.length > 0;
+
+      // If we have coordinates, calculate distance
+      let distance = null;
+      if (latitude && longitude) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = latitude * Math.PI/180;
+        const φ2 = location.latitude * Math.PI/180;
+        const Δφ = (location.latitude - latitude) * Math.PI/180;
+        const Δλ = (location.longitude - longitude) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        distance = R * c; // Distance in meters
+      }
+
       return {
         id: location.id,
         title: location.title,
@@ -281,7 +276,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         visitCount: location.visit_count,
         hasStories: hasUserStories,
         hasAR: false,
-        distance: distanceMap.get(location.id) || null,
+        distance: distance,
         period: location.historical_period,
         category: location.category,
         lastUpdated: location.updated_at,
@@ -290,14 +285,16 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       };
     });
 
-    // Filter out locations beyond the radius
-    transformedLocations = transformedLocations.filter(loc => 
-      loc.distance !== null && loc.distance <= radius
-    );
+    // Sort by distance if coordinates provided and nearby filter
+    if (latitude && longitude && filter === 'nearby') {
+      transformedLocations.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+    }
 
-    // For nearby filter, sort by distance
-    if (filter === 'nearby') {
-      transformedLocations.sort((a, b) => a.distance - b.distance);
+    // Filter by radius if coordinates provided
+    if (latitude && longitude && radius) {
+      transformedLocations = transformedLocations.filter(loc => 
+        loc.distance !== null && loc.distance <= radius
+      );
     }
 
     logDebug('Locations', 'Nearby locations fetched', {

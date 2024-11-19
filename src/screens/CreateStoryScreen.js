@@ -269,7 +269,10 @@ const CreateStoryScreen = ({ navigation }) => {
         [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              // Pass refresh parameter when navigating back
+              navigation.navigate('Explore', { refresh: true });
+            },
           },
         ]
       );

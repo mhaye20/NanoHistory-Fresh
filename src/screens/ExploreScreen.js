@@ -177,7 +177,7 @@ const LocationCard = ({ location, onPress, onARPress, colorScheme }) => {
                   style={styles.badge}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    // TODO: Show stories
+                    onPress();
                   }}
                 >
                   <MaterialIcons name="history-edu" size={14} color="#3b82f6" />
@@ -243,7 +243,7 @@ const ChallengeCard = ({ challenge, colorScheme }) => (
   </View>
 );
 
-const ExploreScreen = ({ navigation }) => {
+const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -270,6 +270,16 @@ const ExploreScreen = ({ navigation }) => {
     checkLocationPermission();
     loadUserPoints();
   }, []);
+
+  // Add effect to handle refresh parameter
+  useEffect(() => {
+    if (route.params?.refresh) {
+      // Clear the refresh parameter
+      navigation.setParams({ refresh: undefined });
+      // Refresh the locations
+      handleRefresh();
+    }
+  }, [route.params?.refresh]);
 
   useEffect(() => {
     console.log('Permission status or filter changed:', { permissionStatus, selectedFilter });
