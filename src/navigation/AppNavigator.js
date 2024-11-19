@@ -34,7 +34,10 @@ const AppNavigator = () => {
       <StatusBar style="light" />
       <Stack.Navigator
         initialRouteName="Home"
-        screenOptions={screenOptions}
+        screenOptions={{
+          ...screenOptions,
+          animation: 'slide_from_bottom', // Make all standard screens slide from bottom
+        }}
       >
         <Stack.Screen
           name="Home"
@@ -59,16 +62,41 @@ const AppNavigator = () => {
             headerBlurEffect: 'dark',
           })}
         />
-        <Stack.Screen
-          name="ARView"
-          component={ARViewScreen}
-          options={{
-            title: 'AR Experience',
-            headerTransparent: true,
-            headerBlurEffect: 'dark',
-            presentation: 'fullScreenModal',
+        <Stack.Group
+          screenOptions={{
+            presentation: 'modal',
           }}
-        />
+        >
+          <Stack.Screen
+            name="ARView"
+            component={ARViewScreen}
+            options={{
+              title: 'AR Experience',
+              headerTransparent: true,
+              headerBlurEffect: 'dark',
+              presentation: 'fullScreenModal',
+            }}
+          />
+          <Stack.Screen
+            name="CreateStory"
+            component={CreateStoryScreen}
+            options={{
+              title: 'Share Your Story',
+              headerTransparent: true,
+              headerBlurEffect: 'dark',
+            }}
+          />
+          <Stack.Screen
+            name="Auth"
+            component={AuthScreen}
+            options={{
+              title: '',
+              headerTransparent: true,
+              headerBlurEffect: 'dark',
+              animation: 'slide_from_bottom',
+            }}
+          />
+        </Stack.Group>
         <Stack.Screen
           name="AIGuide"
           component={AIGuideScreen}
@@ -76,27 +104,6 @@ const AppNavigator = () => {
             title: 'AI Historical Guide',
             headerTransparent: true,
             headerBlurEffect: 'dark',
-          }}
-        />
-        <Stack.Screen
-          name="CreateStory"
-          component={CreateStoryScreen}
-          options={{
-            title: 'Share Your Story',
-            headerTransparent: true,
-            headerBlurEffect: 'dark',
-            presentation: 'modal',
-          }}
-        />
-        <Stack.Screen
-          name="Auth"
-          component={AuthScreen}
-          options={{
-            title: '',
-            headerTransparent: true,
-            headerBlurEffect: 'dark',
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
           }}
         />
       </Stack.Navigator>
