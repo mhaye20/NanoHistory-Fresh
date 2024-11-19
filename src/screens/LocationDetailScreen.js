@@ -7,11 +7,16 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getLocationDetails } from '../services/supabase';
 import { generateHistoricalStory, generateVoice } from '../services/ai';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const IMAGE_HEIGHT = SCREEN_WIDTH * 0.75; // 4:3 aspect ratio
 
 const LocationDetailScreen = ({ route, navigation }) => {
   const { location } = route.params;
@@ -49,7 +54,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
   };
 
   const handleAudioNarration = async () => {
-    const storyToNarrate = details?.aiGeneratedStory || aiStory?.story;
+    const storyToNarrate = details?.aiGeneratedStory?.story || aiStory?.story;
     if (!storyToNarrate) return;
 
     try {
@@ -83,6 +88,9 @@ const LocationDetailScreen = ({ route, navigation }) => {
     );
   }
 
+  // Get the image URL from either the cached story or newly generated story
+  const storyImageUrl = details?.aiGeneratedStory?.imageUrl || aiStory?.imageUrl;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -94,12 +102,26 @@ const LocationDetailScreen = ({ route, navigation }) => {
         {/* AI Generated Story */}
         {(details?.aiGeneratedStory || aiStory) && (
           <View style={styles.storyContainer}>
+            {storyImageUrl && (
+              <View style={styles.imageContainer}>
+                <Image
+                  source={{ uri: storyImageUrl }}
+                  style={styles.storyMainImage}
+                  resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={['rgba(15, 23, 42, 0)', 'rgba(15, 23, 42, 0.8)']}
+                  style={styles.imageGradient}
+                />
+              </View>
+            )}
+            
             <View style={styles.storyHeader}>
               <MaterialIcons name="psychology" size={24} color="#3b82f6" />
               <Text style={styles.storyHeaderText}>AI Historical Insights</Text>
             </View>
             <Text style={styles.storyText}>
-              {details?.aiGeneratedStory || aiStory?.story}
+              {details?.aiGeneratedStory?.story || aiStory?.story}
             </Text>
             <View style={styles.factsList}>
               {(details?.aiGeneratedStory?.facts || aiStory?.facts || []).map((fact, index) => (
@@ -200,6 +222,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#94a3b8',
     marginBottom: 16,
+  },
+  imageContainer: {
+    width: '100%',
+    height: IMAGE_HEIGHT,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  storyMainImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 100,
   },
   storyContainer: {
     backgroundColor: '#1e293b',

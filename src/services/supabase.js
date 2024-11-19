@@ -133,6 +133,61 @@ export const clearLocations = async () => {
   }
 };
 
+// Initialize locations using the API
+export const initializeLocations = async (latitude, longitude) => {
+  try {
+    logDebug('Locations', 'Initializing locations...', { latitude, longitude });
+    
+    const response = await fetch('https://micro-history.vercel.app/api/initialize-locations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ latitude, longitude }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to initialize locations');
+    }
+
+    const data = await response.json();
+    
+    // Store locations and stories in Supabase
+    for (const item of data.locations) {
+      // Create location
+      const { data: location, error: locationError } = await adminClient
+        .from('locations')
+        .insert([item.location])
+        .select()
+        .single();
+
+      if (locationError) {
+        throw locationError;
+      }
+
+      // Create AI story
+      const { error: storyError } = await adminClient
+        .from('ai_generated_stories')
+        .insert([{
+          location_id: location.id,
+          content: item.story,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }]);
+
+      if (storyError) {
+        throw storyError;
+      }
+    }
+
+    logDebug('Locations', 'Successfully initialized locations');
+    return data;
+  } catch (error) {
+    logError('Locations', error);
+    throw error;
+  }
+};
+
 export const getLocationDetails = async (locationId) => {
   try {
     logDebug('Locations', 'Fetching location details', { locationId });
@@ -236,15 +291,28 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     query = query.range(offset, offset + limit - 1);
 
     // Execute query
-    const { data: locations, error: locationsError, count } = await query;
-
-    if (locationsError) {
-      logError('Locations', locationsError);
+    let result = await query;
+    
+    if (result.error) {
+      logError('Locations', result.error);
       return { locations: [], hasMore: false };
     }
 
+    // If no locations found and coordinates are provided, try to initialize locations
+    if ((!result.data || result.data.length === 0) && latitude && longitude) {
+      logDebug('Locations', 'No locations found, initializing...');
+      await initializeLocations(latitude, longitude);
+      
+      // Retry the query after initialization
+      result = await query;
+      
+      if (result.error) {
+        throw result.error;
+      }
+    }
+
     // Transform locations with distances and stories
-    let transformedLocations = locations.map(location => {
+    const transformedLocations = (result.data || []).map(location => {
       const aiStory = location.ai_generated_stories?.[0]?.content;
       const hasUserStories = location.stories && location.stories.length > 0;
 
@@ -286,26 +354,27 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
     });
 
     // Sort by distance if coordinates provided and nearby filter
+    let sortedLocations = [...transformedLocations];
     if (latitude && longitude && filter === 'nearby') {
-      transformedLocations.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+      sortedLocations.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
     }
 
     // Filter by radius if coordinates provided
     if (latitude && longitude && radius) {
-      transformedLocations = transformedLocations.filter(loc => 
+      sortedLocations = sortedLocations.filter(loc => 
         loc.distance !== null && loc.distance <= radius
       );
     }
 
     logDebug('Locations', 'Nearby locations fetched', {
-      found: transformedLocations.length,
-      total: count,
-      hasMore: offset + limit < count
+      found: sortedLocations.length,
+      total: result.count,
+      hasMore: offset + limit < result.count
     });
 
     return {
-      locations: transformedLocations,
-      hasMore: offset + limit < count
+      locations: sortedLocations,
+      hasMore: offset + limit < result.count
     };
 
   } catch (error) {
@@ -627,4 +696,5 @@ export default {
   uploadImage,
   getImageUrl,
   clearLocations,
+  initializeLocations,
 };

@@ -5,6 +5,10 @@
       "memory": 1024,
       "maxDuration": 10
     },
+    "api/initialize-locations.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    },
     "api/health.js": {
       "memory": 128,
       "maxDuration": 5
@@ -29,6 +33,7 @@
   "rewrites": [
     { "source": "/api/health", "destination": "/api/health.js" },
     { "source": "/api/generate-story", "destination": "/api/generate-story.js" },
+    { "source": "/api/initialize-locations", "destination": "/api/initialize-locations.js" },
     { "source": "/api/users/pre-register", "destination": "/api/users/pre-register.js" },
     { "source": "/api/users/verify", "destination": "/api/users/verify.js" },
     { "source": "/api/users/resend-verification", "destination": "/api/users/resend-verification.js" },

@@ -17,6 +17,7 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       console.log('Using cached story for location:', location.id);
       return {
         ...cachedStory.content,
+        imageUrl: cachedStory.content.imageUrl, // Ensure imageUrl is included
         audioUrl: null,
         simplifiedVersion: accessibilityNeeds.includes('cognitive')
           ? cachedStory.content.story.split('.').slice(0, 3).join('.') + '.'
@@ -84,11 +85,17 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       throw new Error('Invalid response structure from API');
     }
 
+    // Include the image URL in the content
+    const contentToCache = {
+      ...generatedContent,
+      imageUrl: generatedContent.imageUrl // Ensure imageUrl is preserved
+    };
+
     // Store the generated story in Supabase for future use
     const { error: cacheError } = await supabase.from('ai_generated_stories').upsert([
       {
         location_id: location.id,
-        content: generatedContent,
+        content: contentToCache,
         created_at: new Date().toISOString(),
       }
     ]);
@@ -102,6 +109,7 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       facts: generatedContent.facts,
       historicalPeriods: generatedContent.historicalPeriods,
       suggestedActivities: generatedContent.suggestedActivities,
+      imageUrl: generatedContent.imageUrl, // Include imageUrl in return
       audioUrl: null,
       simplifiedVersion: accessibilityNeeds.includes('cognitive')
         ? generatedContent.story.split('.').slice(0, 3).join('.') + '.'
@@ -136,6 +144,7 @@ const generateLocalStory = (location) => {
     facts,
     historicalPeriods: [randomPeriod],
     suggestedActivities: activities.slice(0, 3),
+    imageUrl: location.image_url, // Use location's image URL for local stories
     audioUrl: null,
     simplifiedVersion: null,
   };
