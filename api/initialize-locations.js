@@ -26,6 +26,18 @@ export default async function handler(req) {
     const body = await req.json();
     const { latitude, longitude } = body;
 
+    // Log environment variable status
+    console.log('[Initialize] Environment variables check:', {
+      MAPS_KEY_EXISTS: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+      MAPS_KEY_LENGTH: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY.length : 0,
+      MAPS_KEY_START: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY.substring(0, 8) : 'none'
+    });
+
+    if (!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) {
+      console.error('[Initialize] Google Maps API key is missing');
+      throw new Error('Google Maps API key is not configured');
+    }
+
     if (!latitude || !longitude) {
       return new Response(
         JSON.stringify({
@@ -37,22 +49,25 @@ export default async function handler(req) {
     }
 
     // First, get the location context using Google Places API
-    console.log('Fetching location context...');
-    const placeResponse = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
-    );
+    console.log('[Initialize] Fetching location context...');
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`;
+    console.log('[Initialize] Geocoding API URL:', geocodeUrl.replace(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY, 'API_KEY'));
+    
+    const placeResponse = await fetch(geocodeUrl);
 
     if (!placeResponse.ok) {
       const placeError = await placeResponse.text();
+      console.error('[Initialize] Failed to get location context:', placeError);
       throw new Error(`Failed to get location context: ${placeError}`);
     }
 
     const placeData = await placeResponse.json();
-    console.log('Location context:', placeData.results[0]?.formatted_address);
+    console.log('[Initialize] Geocoding API response status:', placeData.status);
+    console.log('[Initialize] Location context:', placeData.results[0]?.formatted_address);
     const locationContext = placeData.results[0]?.formatted_address || '';
 
     // Ask OpenAI to identify nearby landmarks
-    console.log('Identifying landmarks...');
+    console.log('[Initialize] Identifying landmarks...');
     const identificationPrompt = `You are looking at coordinates (${latitude}, ${longitude}) in ${locationContext}. 
     Identify 4-5 significant historical buildings, landmarks, or cultural sites at or very near these exact coordinates.
     
@@ -76,7 +91,7 @@ export default async function handler(req) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}`
       },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
@@ -96,45 +111,51 @@ export default async function handler(req) {
 
     if (!identifyResponse.ok) {
       const identifyError = await identifyResponse.text();
+      console.error('[Initialize] Failed to identify locations:', identifyError);
       throw new Error(`Failed to identify locations: ${identifyError}`);
     }
 
     const identifyData = await identifyResponse.json();
-    console.log('OpenAI response received');
+    console.log('[Initialize] OpenAI response received');
     const locations = JSON.parse(identifyData.choices[0].message.content);
 
     // Generate stories and find images for each location
-    console.log('Processing locations...');
+    console.log('[Initialize] Processing locations...');
     const locationStories = await Promise.all(locations.map(async (loc, index) => {
-      console.log(`Processing location ${index + 1}/${locations.length}: ${loc.title}`);
+      console.log(`[Initialize] Processing location ${index + 1}/${locations.length}: ${loc.title}`);
+      console.log(`[Initialize] Location coordinates:`, { lat: loc.latitude, lng: loc.longitude });
       
       // Try to get place photos using Google Places API
-      console.log('Fetching place photos...');
-      const placesResponse = await fetch(
-        `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.place_query)}&inputtype=textquery&fields=photos,place_id&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
-      );
+      console.log('[Initialize] Fetching place photos...');
+      const placesUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.place_query)}&inputtype=textquery&fields=photos,place_id&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`;
+      console.log('[Initialize] Places API URL:', placesUrl.replace(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY, 'API_KEY'));
+      
+      const placesResponse = await fetch(placesUrl);
 
       let imageUrl = null;
 
       if (!placesResponse.ok) {
-        console.log('Places API error:', await placesResponse.text());
+        console.error('[Initialize] Places API error:', await placesResponse.text());
       } else {
         const placesData = await placesResponse.json();
-        console.log('Places API response:', placesData);
+        console.log('[Initialize] Places API response:', placesData);
+        console.log('[Initialize] Places API status:', placesData.status);
         const photoReference = placesData.candidates?.[0]?.photos?.[0]?.photo_reference;
 
         if (photoReference) {
           imageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${photoReference}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`;
-          console.log('Using Places photo');
+          console.log('[Initialize] Using Places photo');
         } else {
           // Fallback to Street View if no place photos
           imageUrl = `https://maps.googleapis.com/maps/api/streetview?size=1200x800&location=${loc.latitude},${loc.longitude}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`;
-          console.log('Falling back to Street View');
+          console.log('[Initialize] Falling back to Street View');
         }
       }
 
+      console.log('[Initialize] Final image URL:', imageUrl?.replace(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY, 'API_KEY'));
+
       // Generate story
-      console.log('Generating story...');
+      console.log('[Initialize] Generating story...');
       const storyPrompt = `Generate a detailed historical story about "${loc.title}" in ${locationContext}.
       Focus specifically on:
       - The physical building/site itself
@@ -158,7 +179,7 @@ export default async function handler(req) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}`
         },
         body: JSON.stringify({
           model: 'gpt-3.5-turbo',
@@ -178,6 +199,7 @@ export default async function handler(req) {
 
       if (!storyResponse.ok) {
         const storyError = await storyResponse.text();
+        console.error('[Initialize] Failed to generate story:', storyError);
         throw new Error(`Failed to generate story: ${storyError}`);
       }
 
@@ -211,7 +233,7 @@ export default async function handler(req) {
       };
     }));
 
-    console.log('All locations processed successfully');
+    console.log('[Initialize] All locations processed successfully');
     return new Response(
       JSON.stringify({
         message: 'Generated location data',
@@ -220,7 +242,7 @@ export default async function handler(req) {
       { headers, status: 200 }
     );
   } catch (error) {
-    console.error('Error:', error);
+    console.error('[Initialize] Error:', error);
     return new Response(
       JSON.stringify({ 
         error: 'Failed to initialize locations',
