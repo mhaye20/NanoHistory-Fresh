@@ -17,7 +17,7 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       console.log('Using cached story for location:', location.id);
       return {
         ...cachedStory.content,
-        imageUrl: cachedStory.content.imageUrl, // Ensure imageUrl is included
+        imageUrl: cachedStory.content.imageUrl,
         audioUrl: null,
         simplifiedVersion: accessibilityNeeds.includes('cognitive')
           ? cachedStory.content.story.split('.').slice(0, 3).join('.') + '.'
@@ -88,7 +88,7 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
     // Include the image URL in the content
     const contentToCache = {
       ...generatedContent,
-      imageUrl: generatedContent.imageUrl // Ensure imageUrl is preserved
+      imageUrl: generatedContent.imageUrl
     };
 
     // Store the generated story in Supabase for future use
@@ -109,7 +109,7 @@ export const generateHistoricalStory = async (location, userPreferences = {}) =>
       facts: generatedContent.facts,
       historicalPeriods: generatedContent.historicalPeriods,
       suggestedActivities: generatedContent.suggestedActivities,
-      imageUrl: generatedContent.imageUrl, // Include imageUrl in return
+      imageUrl: generatedContent.imageUrl,
       audioUrl: null,
       simplifiedVersion: accessibilityNeeds.includes('cognitive')
         ? generatedContent.story.split('.').slice(0, 3).join('.') + '.'
@@ -144,7 +144,7 @@ const generateLocalStory = (location) => {
     facts,
     historicalPeriods: [randomPeriod],
     suggestedActivities: activities.slice(0, 3),
-    imageUrl: location.image_url, // Use location's image URL for local stories
+    imageUrl: location.image_url,
     audioUrl: null,
     simplifiedVersion: null,
   };
@@ -211,7 +211,7 @@ export const generateARContent = async (location, userContext = {}) => {
           type: 'proximity',
           target: 'historical-event-1',
           action: 'play_animation',
-          threshold: 2, // meters
+          threshold: 2,
         },
       ],
       audio: {
@@ -248,7 +248,7 @@ export const generateARContent = async (location, userContext = {}) => {
   }
 };
 
-// Enhanced AI chat responses
+// Enhanced AI chat responses using Vertex AI directly
 export const getAIResponse = async (query, context = {}) => {
   const {
     previousMessages = [],
@@ -299,16 +299,35 @@ export const getAIResponse = async (query, context = {}) => {
   }
 
   try {
+    // Call our serverless endpoint
     const response = await fetch('https://micro-history.vercel.app/api/chat', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query, context }),
+      body: JSON.stringify({
+        query,
+        context: {
+          previousMessages,
+          userProfile,
+          currentLocation,
+          timeOfDay,
+        },
+      }),
     });
 
-    if (!response.ok) throw new Error('Failed to get AI response');
-    return response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Chat API Error:', errorText);
+      throw new Error('Failed to get AI response');
+    }
+
+    const data = await response.json();
+    return {
+      text: data.text,
+      suggestedActions: data.suggestedActions,
+      relatedLocations: await generateNearbyRecommendations(currentLocation),
+    };
   } catch (error) {
     console.error('Error getting AI response:', error);
     throw error;
@@ -404,7 +423,7 @@ export const submitUserContent = async (content) => {
   }
 };
 
-// Helper function to simulate API delay for development
+// Helper functions
 const simulateDelay = () => new Promise(resolve => setTimeout(resolve, 1000));
 
 const calculatePoints = (interests, previousVisits) => {

@@ -13,6 +13,10 @@
       "memory": 128,
       "maxDuration": 5
     },
+    "api/chat.js": {
+      "memory": 128,
+      "maxDuration": 5
+    },
     "api/users/pre-register.js": {
       "memory": 128,
       "maxDuration": 5
@@ -34,6 +38,7 @@
     { "source": "/api/health", "destination": "/api/health.js" },
     { "source": "/api/generate-story", "destination": "/api/generate-story.js" },
     { "source": "/api/initialize-locations", "destination": "/api/initialize-locations.js" },
+    { "source": "/api/chat", "destination": "/api/chat.js" },
     { "source": "/api/users/pre-register", "destination": "/api/users/pre-register.js" },
     { "source": "/api/users/verify", "destination": "/api/users/verify.js" },
     { "source": "/api/users/resend-verification", "destination": "/api/users/resend-verification.js" },
