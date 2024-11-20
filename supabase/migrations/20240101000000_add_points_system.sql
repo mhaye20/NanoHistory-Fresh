@@ -123,9 +123,9 @@ BEGIN
 
     -- Return updated points and streak
     RETURN QUERY
-    SELECT up.total_points, up.visit_streak
-    FROM user_points up
-    WHERE up.user_id = p_user_id;
+    SELECT points.total_points, points.visit_streak
+    FROM user_points points
+    WHERE points.user_id = p_user_id;
 END;
 $$;
 

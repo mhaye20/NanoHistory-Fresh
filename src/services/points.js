@@ -91,15 +91,14 @@ const initializeUserData = async (userId) => {
         visit_streak: 0,
         last_visit_date: null
       }], { onConflict: 'user_id' })
-      .select()
-      .single();
+      .select();
 
     if (pointsError) {
       console.error('Error initializing points:', pointsError);
       throw pointsError;
     }
 
-    console.log('Points data initialized:', pointsData);
+    console.log('Points data initialized:', pointsData[0]);
 
     // Initialize user_stats
     const { data: statsData, error: statsError } = await supabase
@@ -111,16 +110,15 @@ const initializeUserData = async (userId) => {
         total_photos: 0,
         max_streak: 0
       }], { onConflict: 'user_id' })
-      .select()
-      .single();
+      .select();
 
     if (statsError) {
       console.error('Error initializing stats:', statsError);
       throw statsError;
     }
 
-    console.log('Stats data initialized:', statsData);
-    return { pointsData, statsData };
+    console.log('Stats data initialized:', statsData[0]);
+    return { pointsData: pointsData[0], statsData: statsData[0] };
   } catch (error) {
     console.error('Error in initializeUserData:', error);
     throw error;
@@ -131,19 +129,15 @@ const initializeUserData = async (userId) => {
 export const getUserPointsAndLevel = async (userId) => {
   console.log('Getting points and level for user:', userId);
   try {
-    // Try to get existing points data
-    let { data: pointsData, error: pointsError } = await supabase
+    // First try to initialize the user data
+    await initializeUserData(userId);
+
+    // Now get the points data
+    const { data: pointsData, error: pointsError } = await supabase
       .from('user_points')
       .select('total_points, visit_streak, last_visit_date')
       .eq('user_id', userId)
       .single();
-
-    // If no data exists, initialize it
-    if (!pointsData) {
-      console.log('No points data found, initializing...');
-      const { pointsData: newPointsData } = await initializeUserData(userId);
-      pointsData = newPointsData;
-    }
 
     if (pointsError) {
       console.error('Error getting points:', pointsError);
