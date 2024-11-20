@@ -84,7 +84,17 @@ const LocationDetailScreen = ({ route, navigation }) => {
       if (status !== 'granted') {
         Alert.alert(
           'Location Required',
-          'Please enable location services to earn points for visiting historical sites.'
+          'Please enable location services to earn points for visiting historical sites.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              } else {
+                Linking.openSettings();
+              }
+            }}
+          ]
         );
         return;
       }
@@ -95,6 +105,20 @@ const LocationDetailScreen = ({ route, navigation }) => {
       setUserLocation(location);
     } catch (err) {
       console.error('Error getting location:', err);
+      Alert.alert(
+        'Location Error',
+        'Unable to get your location. Please make sure location services are enabled.',
+        [
+          { text: 'Try Again', onPress: getCurrentLocation },
+          { text: 'Open Settings', onPress: () => {
+            if (Platform.OS === 'ios') {
+              Linking.openURL('app-settings:');
+            } else {
+              Linking.openSettings();
+            }
+          }}
+        ]
+      );
     }
   };
 
@@ -148,14 +172,17 @@ const LocationDetailScreen = ({ route, navigation }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         await incrementVisitCount(location.id);
-        await awardPoints(session.user.id, 'FIRST_VISIT', location.id);
+        await awardPoints(session.user.id, 'FIRST_VISIT', location.id, userLocation);
         showPointsAnimation(POINT_VALUES.FIRST_VISIT);
         setPointsAwarded(true);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (err) {
-      console.error('Error awarding points:', err);
-      // Don't block the experience if points fail
+      if (err.message === 'User not at location') {
+        console.log('User not at location, no points awarded');
+      } else {
+        console.error('Error awarding points:', err);
+      }
     }
   };
 
@@ -206,12 +233,18 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        await awardPoints(session.user.id, 'AR_PHOTO', location.id);
+        await awardPoints(session.user.id, 'AR_PHOTO', location.id, userLocation);
         showPointsAnimation(POINT_VALUES.AR_PHOTO);
       }
     } catch (err) {
-      console.error('Error awarding AR points:', err);
-      // Don't block AR view if points fail
+      if (err.message === 'User not at location') {
+        Alert.alert(
+          'Location Required',
+          'You need to be at the historical site to earn points for AR photos.'
+        );
+      } else {
+        console.error('Error awarding AR points:', err);
+      }
     }
     navigation.navigate('ARView', { location: details });
   };

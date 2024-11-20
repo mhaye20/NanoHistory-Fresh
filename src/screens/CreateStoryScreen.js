@@ -14,6 +14,7 @@ import {
   Animated,
   useColorScheme,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -35,6 +36,7 @@ const CreateStoryScreen = ({ navigation }) => {
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
   const [points, setPoints] = useState(0);
   const [aiSuggestions, setAiSuggestions] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -76,8 +78,6 @@ const CreateStoryScreen = ({ navigation }) => {
     }
   }, [aiSuggestions]);
 
-  // Keep all the existing functions (checkAuth, requestPermissions, getCurrentLocation, etc.)
-  // but remove their implementation from this snippet to save space since they remain unchanged
   const checkAuth = async () => {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
@@ -91,21 +91,89 @@ const CreateStoryScreen = ({ navigation }) => {
     }
   };
 
+  const openSettings = async () => {
+    try {
+      if (Platform.OS === 'ios') {
+        await Linking.openURL('app-settings:');
+      } else {
+        await Linking.openSettings();
+      }
+    } catch (error) {
+      console.error('Error opening settings:', error);
+    }
+  };
+
+  const showLocationPermissionAlert = () => {
+    Alert.alert(
+      'Location Access Required',
+      'NanoHistory needs your location to verify historical sites and award points. Please enable location access in Settings.',
+      [
+        { 
+          text: 'Not Now',
+          style: 'cancel',
+          onPress: () => {
+            Alert.alert(
+              'Location Required',
+              'You need to enable location services to share stories and earn points. You can enable this later in Settings.'
+            );
+          }
+        },
+        { 
+          text: 'Open Settings',
+          style: 'default',
+          onPress: openSettings
+        }
+      ],
+      { cancelable: false }
+    );
+  };
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+      
+      if (existingStatus === 'granted') {
+        return true;
+      }
+
+      if (existingStatus === 'denied' && Platform.OS === 'ios') {
+        showLocationPermissionAlert();
+        return false;
+      }
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showLocationPermissionAlert();
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error requesting location permission:', error);
+      return false;
+    }
+  };
+
   const requestPermissions = async () => {
     try {
-      const [imagePermission, locationPermission] = await Promise.all([
+      const [imagePermission, locationGranted] = await Promise.all([
         ImagePicker.requestMediaLibraryPermissionsAsync(),
-        Location.requestForegroundPermissionsAsync(),
+        requestLocationPermission(),
       ]);
 
-      if (!imagePermission.granted || !locationPermission.granted) {
+      if (!imagePermission.granted) {
         Alert.alert(
-          'Permissions Required',
-          'Please grant camera and location permissions to share your story.'
+          'Photo Library Access Required',
+          'Please allow access to your photo library to share photos with your story.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: openSettings }
+          ]
         );
         return false;
       }
-      return true;
+
+      return locationGranted;
     } catch (error) {
       console.error('Error requesting permissions:', error);
       return false;
@@ -114,15 +182,24 @@ const CreateStoryScreen = ({ navigation }) => {
 
   const getCurrentLocation = async () => {
     try {
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) return;
+
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,
       });
       setCurrentLocation(location);
+      setUserLocation(location);
     } catch (error) {
       console.error('Error getting location:', error);
       Alert.alert(
-        'Location Error',
-        'Unable to get your current location. Please try again.'
+        'Location Required',
+        'Unable to get your location. Please make sure location services are enabled and you have a clear view of the sky.',
+        [
+          { text: 'Try Again', onPress: getCurrentLocation },
+          { text: 'Open Settings', onPress: openSettings }
+        ]
       );
     }
   };
@@ -234,52 +311,57 @@ const CreateStoryScreen = ({ navigation }) => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!title.trim() || !story.trim()) {
-      Alert.alert('Missing Information', 'Please provide a title and story.');
-      return;
+const handleSubmit = async () => {
+  if (!title.trim() || !story.trim()) {
+    Alert.alert('Missing Information', 'Please provide a title and story.');
+    return;
+  }
+
+  if (!currentLocation) {
+    await getCurrentLocation();
+  }
+
+  if (!currentLocation) {
+    Alert.alert('Location Required', 'Unable to get your location. Please enable location services and try again.');
+    return;
+  }
+
+  const { data: { session }, error: authError } = await supabase.auth.getSession();
+  if (!session) {
+    navigation.navigate('Auth');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const storyData = {
+      title: title.trim(),
+      content: story.trim(),
+      media_urls: images,
+      tags: tags,
+      accuracy_score: accuracy,
+      latitude: currentLocation.coords.latitude,
+      longitude: currentLocation.coords.longitude,
+      author_id: session.user.id
+    };
+
+    // Create the story
+    const createdStory = await createStory(storyData);
+    console.log('Created story:', createdStory); // Debug log
+
+    // Get location ID from the nested location object
+    const locationId = createdStory.location?.id;
+    console.log('Location ID:', locationId); // Debug log
+
+    if (!locationId) {
+      throw new Error('No location ID returned from story creation');
     }
 
-    if (!currentLocation) {
-      await getCurrentLocation();
-    }
-
-    if (!currentLocation) {
-      Alert.alert('Location Required', 'Unable to get your location. Please enable location services and try again.');
-      return;
-    }
-
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (!session) {
-      navigation.navigate('Auth');
-      return;
-    }
-
-    setLoading(true);
-
+    // Award points for sharing a story
     try {
-      const storyData = {
-        title: title.trim(),
-        content: story.trim(),
-        media_urls: images,
-        tags: tags,
-        accuracy_score: accuracy,
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        author_id: session.user.id
-      };
-
-      // Create the story
-      const createdStory = await createStory(storyData);
-
-      // Award points for sharing a story
-      try {
-        await awardPoints(session.user.id, 'STORY_SHARE', createdStory.location_id);
-      } catch (pointsError) {
-        console.error('Error awarding points:', pointsError);
-        // Don't block the story submission if points fail
-      }
-
+      await awardPoints(session.user.id, 'STORY_SHARE', locationId, userLocation);
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         'Success!',
@@ -293,17 +375,33 @@ const CreateStoryScreen = ({ navigation }) => {
           },
         ]
       );
-    } catch (error) {
-      console.error('Error submitting story:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
-      Alert.alert(
-        'Error',
-        'Failed to submit your story. Please try again.'
-      );
-    } finally {
-      setLoading(false);
+    } catch (pointsError) {
+      console.error('Points error:', pointsError); // Debug log
+      if (pointsError.message === 'User not at location') {
+        Alert.alert(
+          'Story Shared',
+          'Your story was shared successfully, but you need to be at the historical site to earn points.'
+        );
+      } else {
+        console.error('Error awarding points:', pointsError);
+        Alert.alert(
+          'Story Shared',
+          'Your story was shared successfully, but there was an error awarding points.'
+        );
+      }
+      navigation.navigate('Explore', { refresh: true });
     }
-  };
+  } catch (error) {
+    console.error('Error submitting story:', error);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
+    Alert.alert(
+      'Error',
+      'Failed to submit your story. Please try again.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <LinearGradient

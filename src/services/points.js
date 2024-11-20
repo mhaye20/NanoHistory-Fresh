@@ -80,6 +80,7 @@ export const LEVELS = [
 
 // Initialize user data
 const initializeUserData = async (userId) => {
+  console.log('Initializing user data for:', userId);
   try {
     // Initialize user_points
     const { data: pointsData, error: pointsError } = await supabase
@@ -93,7 +94,12 @@ const initializeUserData = async (userId) => {
       .select()
       .single();
 
-    if (pointsError) throw pointsError;
+    if (pointsError) {
+      console.error('Error initializing points:', pointsError);
+      throw pointsError;
+    }
+
+    console.log('Points data initialized:', pointsData);
 
     // Initialize user_stats
     const { data: statsData, error: statsError } = await supabase
@@ -108,17 +114,22 @@ const initializeUserData = async (userId) => {
       .select()
       .single();
 
-    if (statsError) throw statsError;
+    if (statsError) {
+      console.error('Error initializing stats:', statsError);
+      throw statsError;
+    }
 
+    console.log('Stats data initialized:', statsData);
     return { pointsData, statsData };
   } catch (error) {
-    console.error('Error initializing user data:', error);
+    console.error('Error in initializeUserData:', error);
     throw error;
   }
 };
 
 // Get user's current points and level
 export const getUserPointsAndLevel = async (userId) => {
+  console.log('Getting points and level for user:', userId);
   try {
     // Try to get existing points data
     let { data: pointsData, error: pointsError } = await supabase
@@ -129,11 +140,17 @@ export const getUserPointsAndLevel = async (userId) => {
 
     // If no data exists, initialize it
     if (!pointsData) {
+      console.log('No points data found, initializing...');
       const { pointsData: newPointsData } = await initializeUserData(userId);
       pointsData = newPointsData;
     }
 
-    if (pointsError) throw pointsError;
+    if (pointsError) {
+      console.error('Error getting points:', pointsError);
+      throw pointsError;
+    }
+
+    console.log('Retrieved points data:', pointsData);
 
     // Calculate level based on total points
     const level = LEVELS.find(l => 
@@ -141,7 +158,7 @@ export const getUserPointsAndLevel = async (userId) => {
       pointsData.total_points <= l.maxPoints
     );
 
-    return {
+    const result = {
       points: pointsData.total_points,
       streak: pointsData.visit_streak,
       lastVisit: pointsData.last_visit_date,
@@ -151,17 +168,39 @@ export const getUserPointsAndLevel = async (userId) => {
       minPoints: level.minPoints,
       maxPoints: level.maxPoints
     };
+
+    console.log('Calculated user level data:', result);
+    return result;
   } catch (error) {
-    console.error('Error getting user points:', error);
+    console.error('Error in getUserPointsAndLevel:', error);
     throw error;
   }
 };
 
 // Award points for an action
-export const awardPoints = async (userId, action, locationId = null) => {
+export const awardPoints = async (userId, action, locationId = null, userLocation = null) => {
+  console.log('Awarding points:', { userId, action, locationId });
   try {
     const points = POINT_VALUES[action];
-    if (!points) throw new Error('Invalid action type');
+    if (!points) {
+      console.error('Invalid action type:', action);
+      throw new Error('Invalid action type');
+    }
+
+    // For location-based actions, verify user's location
+    if (locationId && userLocation) {
+      console.log('Checking location:', { locationId, userLocation });
+      const atLocation = await isAtLocation(
+        locationId,
+        userLocation.coords.latitude,
+        userLocation.coords.longitude
+      );
+
+      if (!atLocation) {
+        console.log('User not at location');
+        throw new Error('User not at location');
+      }
+    }
 
     // Ensure user data exists
     await initializeUserData(userId);
@@ -177,17 +216,28 @@ export const awardPoints = async (userId, action, locationId = null) => {
       }
     );
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error in award_points RPC:', error);
+      throw error;
+    }
+
+    console.log('Points awarded:', data);
 
     // If no data returned, get current points
     if (!data || data.length === 0) {
+      console.log('No data returned from award_points, fetching current points');
       const { data: pointsData, error: pointsError } = await supabase
         .from('user_points')
         .select('total_points, visit_streak')
         .eq('user_id', userId)
         .single();
 
-      if (pointsError) throw pointsError;
+      if (pointsError) {
+        console.error('Error getting points after award:', pointsError);
+        throw pointsError;
+      }
+
+      console.log('Current points data:', pointsData);
       return pointsData;
     }
 
@@ -196,13 +246,14 @@ export const awardPoints = async (userId, action, locationId = null) => {
 
     return data[0];
   } catch (error) {
-    console.error('Error awarding points:', error);
+    console.error('Error in awardPoints:', error);
     throw error;
   }
 };
 
 // Check and award achievements
 export const checkAchievements = async (userId) => {
+  console.log('Checking achievements for user:', userId);
   try {
     // Ensure user data exists
     await initializeUserData(userId);
@@ -214,7 +265,12 @@ export const checkAchievements = async (userId) => {
       .eq('user_id', userId)
       .single();
 
-    if (statsError) throw statsError;
+    if (statsError) {
+      console.error('Error getting user stats:', statsError);
+      throw statsError;
+    }
+
+    console.log('User stats:', stats);
 
     // Get user's current achievements
     const { data: currentAchievements, error: achievementsError } = await supabase
@@ -222,7 +278,12 @@ export const checkAchievements = async (userId) => {
       .select('achievement_id')
       .eq('user_id', userId);
 
-    if (achievementsError) throw achievementsError;
+    if (achievementsError) {
+      console.error('Error getting current achievements:', achievementsError);
+      throw achievementsError;
+    }
+
+    console.log('Current achievements:', currentAchievements);
 
     const earnedIds = currentAchievements.map(a => a.achievement_id);
     const newAchievements = [];
@@ -248,6 +309,7 @@ export const checkAchievements = async (userId) => {
       }
 
       if (earned) {
+        console.log('New achievement earned:', id);
         newAchievements.push({
           user_id: userId,
           achievement_id: id,
@@ -258,11 +320,15 @@ export const checkAchievements = async (userId) => {
 
     // Award new achievements
     if (newAchievements.length > 0) {
+      console.log('Awarding new achievements:', newAchievements);
       const { error: insertError } = await supabase
         .from('user_achievements')
         .insert(newAchievements);
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Error inserting achievements:', insertError);
+        throw insertError;
+      }
 
       // Award points for each new achievement
       for (const achievement of newAchievements) {
@@ -272,13 +338,14 @@ export const checkAchievements = async (userId) => {
 
     return newAchievements;
   } catch (error) {
-    console.error('Error checking achievements:', error);
+    console.error('Error in checkAchievements:', error);
     throw error;
   }
 };
 
 // Get user's achievements
 export const getUserAchievements = async (userId) => {
+  console.log('Getting achievements for user:', userId);
   try {
     // Ensure user data exists
     await initializeUserData(userId);
@@ -288,14 +355,73 @@ export const getUserAchievements = async (userId) => {
       .select('achievement_id, earned_at')
       .eq('user_id', userId);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error getting achievements:', error);
+      throw error;
+    }
+
+    console.log('Retrieved achievements:', data);
 
     return data.map(achievement => ({
       ...ACHIEVEMENTS[achievement.achievement_id],
       earned_at: achievement.earned_at
     }));
   } catch (error) {
-    console.error('Error getting user achievements:', error);
+    console.error('Error in getUserAchievements:', error);
     throw error;
+  }
+};
+
+// Calculate distance between two points using Haversine formula
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c; // Distance in meters
+};
+
+// Check if user is at location
+const isAtLocation = async (locationId, userLat, userLon) => {
+  console.log('Checking if user is at location:', { locationId, userLat, userLon });
+  try {
+    const { data: location, error } = await supabase
+      .from('locations')
+      .select('latitude, longitude')
+      .eq('id', locationId)
+      .single();
+
+    if (error) {
+      console.error('Error getting location:', error);
+      throw error;
+    }
+    if (!location) {
+      console.log('Location not found');
+      return false;
+    }
+
+    console.log('Location data:', location);
+
+    const distance = calculateDistance(
+      userLat,
+      userLon,
+      location.latitude,
+      location.longitude
+    );
+
+    console.log('Distance to location:', distance);
+
+    // Return true if within 100 meters
+    return distance <= 100;
+  } catch (error) {
+    console.error('Error in isAtLocation:', error);
+    return false;
   }
 };

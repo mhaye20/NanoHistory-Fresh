@@ -173,7 +173,7 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
   );
 };
 
-const ExploreScreen = ({ navigation }) => {
+const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -198,6 +198,23 @@ const ExploreScreen = ({ navigation }) => {
     loadUserData();
   }, []);
 
+  // Add effect to refresh points when screen is focused
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadUserData();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  useEffect(() => {
+    if (route.params?.refresh) {
+      loadUserData();
+      // Reset the refresh param
+      navigation.setParams({ refresh: undefined });
+    }
+  }, [route.params?.refresh]);
+
   useEffect(() => {
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
       fetchNearbyLocations(permissionStatus === 'denied');
@@ -208,9 +225,13 @@ const ExploreScreen = ({ navigation }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        console.log('Loading user data for:', user.id); // Debug log
         const pointsData = await getUserPointsAndLevel(user.id);
         const achievementsData = await getUserAchievements(user.id);
         
+        console.log('Points data:', pointsData); // Debug log
+        console.log('Achievements:', achievementsData); // Debug log
+
         setUserPoints(pointsData.points);
         setUserLevel(pointsData);
         setAchievements(achievementsData);
