@@ -20,9 +20,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MotiView, AnimatePresence } from 'moti';
 import { getAIResponse, generateVoice } from '../services/ai';
 import * as Location from 'expo-location';
 
@@ -34,10 +32,9 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    Animated.spring(fadeAnim, {
+    Animated.timing(fadeAnim, {
       toValue: 1,
-      tension: 50,
-      friction: 8,
+      duration: 300,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -65,22 +62,14 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
   };
 
   return (
-    <MotiView
-      from={{ opacity: 0, scale: 0.9, translateY: 20 }}
-      animate={{ opacity: 1, scale: 1, translateY: 0 }}
-      transition={{ type: 'spring', damping: 15 }}
-      style={[
-        styles.messageBubble,
-        message.isUser ? styles.userBubble : styles.aiBubble,
-        colorScheme === 'dark' && (message.isUser ? styles.userBubbleDark : styles.aiBubbleDark)
-      ]}
-    >
+    <Animated.View style={[
+      styles.messageBubble,
+      message.isUser ? styles.userBubble : styles.aiBubble,
+      colorScheme === 'dark' && (message.isUser ? styles.userBubbleDark : styles.aiBubbleDark),
+      { opacity: fadeAnim }
+    ]}>
       {!message.isUser && (
-        <BlurView
-          intensity={20}
-          tint={colorScheme}
-          style={styles.aiHeader}
-        >
+        <View style={styles.aiHeader}>
           <Image
             source={require('../../assets/icon.png')}
             style={styles.aiAvatar}
@@ -91,7 +80,7 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
           ]}>
             History Guide
           </Text>
-        </BlurView>
+        </View>
       )}
       
       <TouchableOpacity
@@ -120,53 +109,42 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
             style={[styles.actionButton, styles.audioButton]}
             onPress={handleAudioPress}
           >
-            <BlurView intensity={30} tint={colorScheme} style={styles.audioButtonBlur}>
+            <View style={styles.audioButtonBackground}>
               <MaterialIcons
                 name={isPlaying ? "stop" : "volume-up"}
                 size={20}
                 color={colorScheme === 'dark' ? '#e2e8f0' : '#64748b'}
               />
-            </BlurView>
+            </View>
           </TouchableOpacity>
 
           {message.suggestedActions?.map((action, index) => (
-            <MotiView
+            <TouchableOpacity
               key={index}
-              from={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 100 }}
+              style={[styles.actionButton, styles.suggestedAction]}
+              onPress={() => handleActionPress(action)}
             >
-              <TouchableOpacity
-                style={[styles.actionButton, styles.suggestedAction]}
-                onPress={() => handleActionPress(action)}
+              <LinearGradient
+                colors={['rgba(59, 130, 246, 0.1)', 'rgba(59, 130, 246, 0.2)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.actionGradient}
               >
-                <LinearGradient
-                  colors={['rgba(59, 130, 246, 0.1)', 'rgba(59, 130, 246, 0.2)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.actionGradient}
-                >
-                  <MaterialIcons
-                    name={getActionIcon(action.type)}
-                    size={20}
-                    color="#3b82f6"
-                  />
-                  <Text style={styles.actionText}>{action.title}</Text>
-                  <BlurView intensity={20} tint={colorScheme} style={styles.pointsBadge}>
-                    <Text style={styles.pointsText}>+{action.points}</Text>
-                  </BlurView>
-                </LinearGradient>
-              </TouchableOpacity>
-            </MotiView>
+                <MaterialIcons
+                  name={getActionIcon(action.type)}
+                  size={20}
+                  color="#3b82f6"
+                />
+                <Text style={styles.actionText}>{action.title}</Text>
+                <View style={styles.pointsBadge}>
+                  <Text style={styles.pointsText}>+{action.points}</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
           ))}
 
           {message.relatedLocations?.length > 0 && (
-            <MotiView
-              from={{ opacity: 0, translateY: 10 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ delay: 200 }}
-              style={styles.relatedLocations}
-            >
+            <View style={styles.relatedLocations}>
               <Text style={[
                 styles.relatedTitle,
                 colorScheme === 'dark' && styles.relatedTitleDark
@@ -174,33 +152,27 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
                 Nearby Places:
               </Text>
               {message.relatedLocations.map((location, index) => (
-                <MotiView
+                <TouchableOpacity
                   key={index}
-                  from={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 300 + index * 100 }}
+                  style={[
+                    styles.locationButton,
+                    colorScheme === 'dark' && styles.locationButtonDark
+                  ]}
+                  onPress={() => handleActionPress({
+                    type: 'visit',
+                    location,
+                  })}
                 >
-                  <TouchableOpacity
-                    style={[
-                      styles.locationButton,
-                      colorScheme === 'dark' && styles.locationButtonDark
-                    ]}
-                    onPress={() => handleActionPress({
-                      type: 'visit',
-                      location,
-                    })}
-                  >
-                    <MaterialIcons name="place" size={16} color="#3b82f6" />
-                    <Text style={styles.locationText}>{location.title}</Text>
-                    <Text style={styles.locationDistance}>{location.distance}</Text>
-                  </TouchableOpacity>
-                </MotiView>
+                  <MaterialIcons name="place" size={16} color="#3b82f6" />
+                  <Text style={styles.locationText}>{location.title}</Text>
+                  <Text style={styles.locationDistance}>{location.distance}</Text>
+                </TouchableOpacity>
               ))}
-            </MotiView>
+            </View>
           )}
         </View>
       )}
-    </MotiView>
+    </Animated.View>
   );
 };
 
@@ -250,7 +222,6 @@ const AIGuideScreen = ({ navigation }) => {
 
   const loadUserProfile = async () => {
     // TODO: Load from AsyncStorage
-    // For now using mock data
     setUserProfile({
       interests: ['history', 'architecture', 'culture'],
       visitedLocations: [],
@@ -317,10 +288,8 @@ const AIGuideScreen = ({ navigation }) => {
 
       setMessages(prev => [...prev, aiMessage]);
       
-      // Haptic feedback for response
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Auto-play response for accessibility
       if (userProfile.accessibility.visualAid) {
         Speech.speak(aiMessage.text, {
           language: userProfile.preferredLanguage,
@@ -391,12 +360,7 @@ const AIGuideScreen = ({ navigation }) => {
     ];
 
     return (
-      <MotiView
-        from={{ opacity: 0, translateY: 20 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ type: 'spring', delay: 300 }}
-        style={styles.suggestionsContainer}
-      >
+      <View style={styles.suggestionsContainer}>
         <Text style={[
           styles.suggestionsTitle,
           colorScheme === 'dark' && styles.suggestionsTextDark
@@ -405,35 +369,29 @@ const AIGuideScreen = ({ navigation }) => {
         </Text>
         <View style={styles.suggestionButtons}>
           {suggestions.map((suggestion, index) => (
-            <MotiView
+            <TouchableOpacity
               key={index}
-              from={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 400 + index * 100 }}
+              style={[
+                styles.suggestionButton,
+                colorScheme === 'dark' && styles.suggestionButtonDark
+              ]}
+              onPress={() => {
+                setInputText(suggestion.text);
+                inputRef.current?.focus();
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
             >
-              <TouchableOpacity
-                style={[
-                  styles.suggestionButton,
-                  colorScheme === 'dark' && styles.suggestionButtonDark
-                ]}
-                onPress={() => {
-                  setInputText(suggestion.text);
-                  inputRef.current?.focus();
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <MaterialIcons
-                  name={suggestion.icon}
-                  size={20}
-                  color="#3b82f6"
-                  style={styles.suggestionIcon}
-                />
-                <Text style={styles.suggestionText}>{suggestion.text}</Text>
-              </TouchableOpacity>
-            </MotiView>
+              <MaterialIcons
+                name={suggestion.icon}
+                size={20}
+                color="#3b82f6"
+                style={styles.suggestionIcon}
+              />
+              <Text style={styles.suggestionText}>{suggestion.text}</Text>
+            </TouchableOpacity>
           ))}
         </View>
-      </MotiView>
+      </View>
     );
   };
 
@@ -462,14 +420,10 @@ const AIGuideScreen = ({ navigation }) => {
             showsVerticalScrollIndicator={false}
           />
 
-          <BlurView
-            intensity={30}
-            tint={colorScheme}
-            style={[
-              styles.inputContainer,
-              colorScheme === 'dark' && styles.inputContainerDark
-            ]}
-          >
+          <View style={[
+            styles.inputContainer,
+            colorScheme === 'dark' && styles.inputContainerDark
+          ]}>
             <TextInput
               ref={inputRef}
               style={[
@@ -506,7 +460,7 @@ const AIGuideScreen = ({ navigation }) => {
                 )}
               </LinearGradient>
             </TouchableOpacity>
-          </BlurView>
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
@@ -556,10 +510,10 @@ const styles = StyleSheet.create({
   aiBubble: {
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
-    backgroundColor: 'rgba(241, 245, 249, 0.9)',
+    backgroundColor: 'rgba(241, 245, 249, 0.95)',
   },
   aiBubbleDark: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
   },
   aiHeader: {
     flexDirection: 'row',
@@ -567,6 +521,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 16,
     padding: 8,
+    backgroundColor: 'rgba(241, 245, 249, 0.5)',
   },
   aiAvatar: {
     width: 24,
@@ -617,9 +572,10 @@ const styles = StyleSheet.create({
   audioButton: {
     alignSelf: 'flex-start',
   },
-  audioButtonBlur: {
+  audioButtonBackground: {
     padding: 10,
     borderRadius: 16,
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
   },
   suggestedAction: {
     backgroundColor: 'transparent',
@@ -641,6 +597,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
   },
   pointsText: {
     color: '#3b82f6',
@@ -688,9 +645,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(226, 232, 240, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   inputContainerDark: {
     borderTopColor: 'rgba(30, 41, 59, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
   },
   input: {
     flex: 1,

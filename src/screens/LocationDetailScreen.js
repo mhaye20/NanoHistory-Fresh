@@ -14,9 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { MotiView, AnimatePresence } from 'moti';
 import { getLocationDetails } from '../services/supabase';
 import { generateHistoricalStory, generateVoice } from '../services/ai';
 
@@ -34,6 +32,9 @@ const LocationDetailScreen = ({ route, navigation }) => {
   const [expandedImage, setExpandedImage] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+
   const imageScale = scrollY.interpolate({
     inputRange: [-100, 0, 100],
     outputRange: [1.2, 1, 0.8],
@@ -48,6 +49,19 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     fetchLocationDetails();
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      })
+    ]).start();
+
     return () => {
       isMounted.current = false;
     };
@@ -113,24 +127,16 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   if (loading) {
     return (
-      <MotiView 
-        from={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        style={styles.centerContainer}
-      >
+      <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
         <Text style={styles.loadingText}>Loading location details...</Text>
-      </MotiView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <MotiView 
-        from={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        style={styles.centerContainer}
-      >
+      <View style={styles.centerContainer}>
         <MaterialIcons name="error-outline" size={48} color="#ef4444" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
@@ -139,7 +145,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
-      </MotiView>
+      </View>
     );
   }
 
@@ -151,11 +157,14 @@ const LocationDetailScreen = ({ route, navigation }) => {
         styles.header,
         { opacity: headerOpacity }
       ]}>
-        <BlurView intensity={80} tint="dark" style={styles.headerBlur}>
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.9)', 'rgba(15, 23, 42, 0.8)']}
+          style={styles.headerGradient}
+        >
           <Text style={styles.headerTitle} numberOfLines={1}>
             {details?.title}
           </Text>
-        </BlurView>
+        </LinearGradient>
       </Animated.View>
 
       <Animated.ScrollView
@@ -190,14 +199,13 @@ const LocationDetailScreen = ({ route, navigation }) => {
           </Animated.View>
         </TouchableOpacity>
 
-        <MotiView
-          from={{ opacity: 0, translateY: 20 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 600 }}
-        >
+        <Animated.View style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }}>
           {/* AI Generated Story */}
           {(details?.aiGeneratedStory || aiStory) && (
-            <BlurView intensity={20} tint="dark" style={styles.storyContainer}>
+            <View style={styles.storyContainer}>
               <View style={styles.storyHeader}>
                 <MaterialIcons name="psychology" size={24} color="#3b82f6" />
                 <Text style={styles.storyHeaderText}>AI Historical Insights</Text>
@@ -207,19 +215,22 @@ const LocationDetailScreen = ({ route, navigation }) => {
               </Text>
               <View style={styles.factsList}>
                 {(details?.aiGeneratedStory?.facts || aiStory?.facts || []).map((fact, index) => (
-                  <MotiView
+                  <Animated.View
                     key={index}
-                    from={{ opacity: 0, translateX: -20 }}
-                    animate={{ opacity: 1, translateX: 0 }}
-                    transition={{ delay: index * 150 }}
-                    style={styles.factItem}
+                    style={[
+                      styles.factItem,
+                      {
+                        opacity: fadeAnim,
+                        transform: [{ translateX: slideAnim }]
+                      }
+                    ]}
                   >
                     <MaterialIcons name="lightbulb" size={16} color="#3b82f6" />
                     <Text style={styles.factText}>{fact}</Text>
-                  </MotiView>
+                  </Animated.View>
                 ))}
               </View>
-            </BlurView>
+            </View>
           )}
 
           {/* User Stories */}
@@ -230,104 +241,107 @@ const LocationDetailScreen = ({ route, navigation }) => {
                 <Text style={styles.sectionHeaderText}>Community Stories</Text>
               </View>
               {details.userStories.map((story, index) => (
-                <MotiView
+                <Animated.View
                   key={index}
-                  from={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 150 }}
+                  style={[
+                    styles.userStory,
+                    {
+                      opacity: fadeAnim,
+                      transform: [{ translateY: slideAnim }]
+                    }
+                  ]}
                 >
-                  <BlurView intensity={20} tint="dark" style={styles.userStory}>
-                    <Text style={styles.userStoryTitle}>{story.title}</Text>
-                    <Text style={styles.userStoryContent}>{story.content}</Text>
-                    {story.media_urls && story.media_urls.length > 0 && (
-                      <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false} 
-                        style={styles.mediaScroll}
-                      >
-                        {story.media_urls.map((url, mediaIndex) => (
-                          <TouchableOpacity
-                            key={mediaIndex}
-                            onPress={() => {/* Handle image preview */}}
-                            style={styles.mediaImageContainer}
-                          >
-                            <Image
-                              source={{ uri: url }}
-                              style={styles.storyImage}
-                            />
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    )}
-                    {story.tags && story.tags.length > 0 && (
-                      <View style={styles.tagsContainer}>
-                        {story.tags.map((tag, tagIndex) => (
-                          <BlurView
-                            key={tagIndex}
-                            intensity={20}
-                            tint="dark"
-                            style={styles.tag}
-                          >
-                            <Text style={styles.tagText}>{tag}</Text>
-                          </BlurView>
-                        ))}
-                      </View>
-                    )}
-                  </BlurView>
-                </MotiView>
+                  <Text style={styles.userStoryTitle}>{story.title}</Text>
+                  <Text style={styles.userStoryContent}>{story.content}</Text>
+                  {story.media_urls && story.media_urls.length > 0 && (
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false} 
+                      style={styles.mediaScroll}
+                    >
+                      {story.media_urls.map((url, mediaIndex) => (
+                        <TouchableOpacity
+                          key={mediaIndex}
+                          onPress={() => {/* Handle image preview */}}
+                          style={styles.mediaImageContainer}
+                        >
+                          <Image
+                            source={{ uri: url }}
+                            style={styles.storyImage}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                  {story.tags && story.tags.length > 0 && (
+                    <View style={styles.tagsContainer}>
+                      {story.tags.map((tag, tagIndex) => (
+                        <View
+                          key={tagIndex}
+                          style={styles.tag}
+                        >
+                          <Text style={styles.tagText}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </Animated.View>
               ))}
             </View>
           )}
-        </MotiView>
+        </Animated.View>
       </Animated.ScrollView>
 
-      <BlurView intensity={30} tint="dark" style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={styles.arButton}
-          onPress={handleARView}
+      <View style={styles.buttonContainer}>
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.8)', 'rgba(15, 23, 42, 0.95)']}
+          style={styles.buttonGradient}
         >
-          <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
-          <Text style={styles.buttonText}>View in AR</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.audioButton, playingAudio && styles.playingButton]}
-          onPress={handleAudioNarration}
-          disabled={playingAudio || (!details?.aiGeneratedStory && !aiStory)}
-        >
-          <MaterialIcons 
-            name={playingAudio ? "pause" : "volume-up"} 
-            size={24} 
-            color="#ffffff" 
-          />
-          <Text style={styles.buttonText}>
-            {playingAudio ? 'Playing Audio...' : 'Listen to Story'}
-          </Text>
-        </TouchableOpacity>
-      </BlurView>
-
-      <AnimatePresence>
-        {expandedImage && (
-          <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={styles.expandedImageContainer}
+          <TouchableOpacity
+            style={styles.arButton}
+            onPress={handleARView}
           >
-            <TouchableOpacity
-              style={styles.expandedImageOverlay}
-              onPress={handleImagePress}
-              activeOpacity={1}
-            >
-              <Image
-                source={{ uri: storyImageUrl }}
-                style={styles.expandedImage}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          </MotiView>
-        )}
-      </AnimatePresence>
+            <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
+            <Text style={styles.buttonText}>View in AR</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.audioButton, playingAudio && styles.playingButton]}
+            onPress={handleAudioNarration}
+            disabled={playingAudio || (!details?.aiGeneratedStory && !aiStory)}
+          >
+            <MaterialIcons 
+              name={playingAudio ? "pause" : "volume-up"} 
+              size={24} 
+              color="#ffffff" 
+            />
+            <Text style={styles.buttonText}>
+              {playingAudio ? 'Playing Audio...' : 'Listen to Story'}
+            </Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
+
+      {expandedImage && (
+        <Animated.View 
+          style={[
+            styles.expandedImageContainer,
+            { opacity: fadeAnim }
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.expandedImageOverlay}
+            onPress={handleImagePress}
+            activeOpacity={1}
+          >
+            <Image
+              source={{ uri: storyImageUrl }}
+              style={styles.expandedImage}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 };
@@ -344,7 +358,7 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 100,
   },
-  headerBlur: {
+  headerGradient: {
     paddingVertical: 16,
     paddingHorizontal: 20,
   },
@@ -395,6 +409,7 @@ const styles = StyleSheet.create({
     margin: 16,
     borderRadius: 20,
     padding: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.2)',
   },
@@ -450,6 +465,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.2)',
   },
@@ -486,6 +502,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
   },
@@ -499,6 +516,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  buttonGradient: {
     padding: 16,
     gap: 12,
   },
