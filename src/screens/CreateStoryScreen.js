@@ -13,13 +13,20 @@ import {
   Platform,
   Animated,
   useColorScheme,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MotiView, MotiText, AnimatePresence } from 'moti';
 import { createStory, supabase } from '../services/supabase';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const IMAGE_SIZE = (SCREEN_WIDTH - 48) / 3;
 
 const CreateStoryScreen = ({ navigation }) => {
   const [story, setStory] = useState('');
@@ -289,281 +296,379 @@ const CreateStoryScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={[
-      styles.container,
-      colorScheme === 'dark' && styles.containerDark
-    ]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoid}
-      >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+    <LinearGradient
+      colors={colorScheme === 'dark' 
+        ? ['#0f172a', '#1e293b']
+        : ['#ffffff', '#f8fafc']
+      }
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoid}
         >
-          <View style={styles.header}>
-            <Text style={[
-              styles.title,
-              colorScheme === 'dark' && styles.titleDark
-            ]}>
-              Share Your Story
-            </Text>
-            <View style={styles.pointsContainer}>
-              <MaterialIcons name="stars" size={24} color="#fbbf24" />
-              <Animated.Text style={styles.pointsText}>
-                {points} points
-              </Animated.Text>
-            </View>
-          </View>
-
-          <TextInput
-            style={[
-              styles.titleInput,
-              colorScheme === 'dark' && styles.titleInputDark
-            ]}
-            placeholder="Give your story a title..."
-            placeholderTextColor="#64748b"
-            value={title}
-            onChangeText={(text) => {
-              setTitle(text);
-              calculatePoints();
-            }}
-            maxLength={100}
-          />
-
-          <TextInput
-            style={[
-              styles.storyInput,
-              colorScheme === 'dark' && styles.storyInputDark
-            ]}
-            placeholder="Share your historical discovery or local story..."
-            placeholderTextColor="#64748b"
-            value={story}
-            onChangeText={(text) => {
-              setStory(text);
-              calculatePoints();
-            }}
-            multiline
-            maxLength={2000}
-          />
-
-          {story.length > 50 && !isAnalyzing && !aiSuggestions && (
-            <TouchableOpacity
-              style={styles.analyzeButton}
-              onPress={analyzeContent}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <MotiView
+              from={{ opacity: 0, translateY: 20 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'timing', duration: 600 }}
+              style={styles.header}
             >
-              <MaterialIcons name="psychology" size={24} color="#ffffff" />
-              <Text style={styles.analyzeButtonText}>
-                Analyze with AI
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {isAnalyzing && (
-            <View style={styles.analyzingContainer}>
-              <ActivityIndicator color="#3b82f6" size="large" />
               <Text style={[
-                styles.analyzingText,
-                colorScheme === 'dark' && styles.analyzingTextDark
+                styles.title,
+                colorScheme === 'dark' && styles.titleDark
               ]}>
-                Analyzing your story...
+                Share Your Story
               </Text>
-            </View>
-          )}
-
-          {aiSuggestions && (
-            <View style={styles.suggestionsContainer}>
-              <View style={styles.accuracyContainer}>
-                <Text style={styles.accuracyLabel}>Historical Accuracy</Text>
-                <View style={styles.accuracyBar}>
-                  <View
-                    style={[
-                      styles.accuracyFill,
-                      { width: `${aiSuggestions.historicalAccuracy * 100}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.accuracyValue}>
-                  {Math.round(aiSuggestions.historicalAccuracy * 100)}%
-                </Text>
-              </View>
-
-              <View style={styles.improvementsList}>
-                <Text style={[
-                  styles.suggestionsTitle,
-                  colorScheme === 'dark' && styles.suggestionsTitleDark
-                ]}>
-                  Suggested Improvements
-                </Text>
-                {aiSuggestions.improvements.map((improvement, index) => (
-                  <View key={index} style={styles.improvementItem}>
-                    <MaterialIcons name="lightbulb" size={20} color="#3b82f6" />
-                    <Text style={[
-                      styles.improvementText,
-                      colorScheme === 'dark' && styles.improvementTextDark
-                    ]}>
-                      {improvement}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              <View style={styles.suggestedTags}>
-                <Text style={[
-                  styles.suggestionsTitle,
-                  colorScheme === 'dark' && styles.suggestionsTitleDark
-                ]}>
-                  Suggested Tags
-                </Text>
-                <View style={styles.tagsList}>
-                  {aiSuggestions.suggestedTags.map((tag, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.suggestedTag}
-                      onPress={() => {
-                        if (!tags.includes(tag)) {
-                          setTags([...tags, tag]);
-                          calculatePoints();
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        }
-                      }}
-                    >
-                      <MaterialIcons name="add" size={20} color="#3b82f6" />
-                      <Text style={styles.suggestedTagText}>{tag}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {aiSuggestions.relatedStories.length > 0 && (
-                <View style={styles.relatedStories}>
-                  <Text style={[
-                    styles.suggestionsTitle,
-                    colorScheme === 'dark' && styles.suggestionsTitleDark
-                  ]}>
-                    Related Stories
-                  </Text>
-                  {aiSuggestions.relatedStories.map((relatedStory, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.relatedStoryItem}
-                      onPress={() => {
-                        // TODO: Navigate to related story
-                      }}
-                    >
-                      <MaterialIcons name="history-edu" size={20} color="#3b82f6" />
-                      <Text style={[
-                        styles.relatedStoryText,
-                        colorScheme === 'dark' && styles.relatedStoryTextDark
-                      ]}>
-                        {relatedStory.title}
-                      </Text>
-                      <Text style={styles.relevanceText}>
-                        {Math.round(relatedStory.relevance * 100)}% match
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          <View style={styles.imagesContainer}>
-            {images.map((uri, index) => (
-              <View key={index} style={styles.imageWrapper}>
-                <Image source={{ uri }} style={styles.image} />
-                <TouchableOpacity
-                  style={styles.removeImage}
-                  onPress={() => removeImage(index)}
-                >
-                  <MaterialIcons name="close" size={20} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            {images.length < 5 && (
-              <TouchableOpacity style={styles.addImage} onPress={pickImage}>
-                <MaterialIcons name="add-photo-alternate" size={32} color="#3b82f6" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.tagsContainer}>
-            <View style={styles.tagInput}>
-              <TextInput
-                style={[
-                  styles.tagTextInput,
-                  colorScheme === 'dark' && styles.tagTextInputDark
-                ]}
-                placeholder="Add tags (e.g., architecture, 1800s)..."
-                placeholderTextColor="#64748b"
-                value={tagInput}
-                onChangeText={setTagInput}
-                onSubmitEditing={addTag}
-                maxLength={20}
-              />
-              <TouchableOpacity
-                style={styles.addTagButton}
-                onPress={addTag}
-                disabled={!tagInput.trim()}
+              <BlurView 
+                intensity={20} 
+                tint={colorScheme} 
+                style={styles.pointsContainer}
               >
-                <MaterialIcons
-                  name="add"
-                  size={24}
-                  color={tagInput.trim() ? '#3b82f6' : '#64748b'}
+                <MaterialIcons name="stars" size={24} color="#fbbf24" />
+                <Animated.Text style={styles.pointsText}>
+                  {points} points
+                </Animated.Text>
+              </BlurView>
+            </MotiView>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 20 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'timing', duration: 600, delay: 100 }}
+            >
+              <BlurView
+                intensity={20}
+                tint={colorScheme}
+                style={styles.formContainer}
+              >
+                <TextInput
+                  style={[
+                    styles.titleInput,
+                    colorScheme === 'dark' && styles.titleInputDark
+                  ]}
+                  placeholder="Give your story a title..."
+                  placeholderTextColor="#64748b"
+                  value={title}
+                  onChangeText={(text) => {
+                    setTitle(text);
+                    calculatePoints();
+                  }}
+                  maxLength={100}
                 />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.tags}>
-              {tags.map((tag, index) => (
-                <View key={index} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
+
+                <TextInput
+                  style={[
+                    styles.storyInput,
+                    colorScheme === 'dark' && styles.storyInputDark
+                  ]}
+                  placeholder="Share your historical discovery or local story..."
+                  placeholderTextColor="#64748b"
+                  value={story}
+                  onChangeText={(text) => {
+                    setStory(text);
+                    calculatePoints();
+                  }}
+                  multiline
+                  maxLength={2000}
+                />
+              </BlurView>
+            </MotiView>
+
+            <AnimatePresence>
+              {story.length > 50 && !isAnalyzing && !aiSuggestions && (
+                <MotiView
+                  from={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  style={styles.analyzeButtonContainer}
+                >
                   <TouchableOpacity
-                    onPress={() => removeTag(index)}
-                    style={styles.removeTag}
+                    style={styles.analyzeButton}
+                    onPress={analyzeContent}
                   >
-                    <MaterialIcons name="close" size={16} color="#64748b" />
+                    <LinearGradient
+                      colors={['#3b82f6', '#2563eb']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.analyzeGradient}
+                    >
+                      <MaterialIcons name="psychology" size={24} color="#ffffff" />
+                      <Text style={styles.analyzeButtonText}>
+                        Analyze with AI
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </MotiView>
+              )}
+            </AnimatePresence>
+
+            {isAnalyzing && (
+              <MotiView
+                from={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                style={styles.analyzingContainer}
+              >
+                <ActivityIndicator color="#3b82f6" size="large" />
+                <Text style={[
+                  styles.analyzingText,
+                  colorScheme === 'dark' && styles.analyzingTextDark
+                ]}>
+                  Analyzing your story...
+                </Text>
+              </MotiView>
+            )}
+
+            <AnimatePresence>
+              {aiSuggestions && (
+                <MotiView
+                  from={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                >
+                  <BlurView
+                    intensity={20}
+                    tint={colorScheme}
+                    style={styles.suggestionsContainer}
+                  >
+                    <View style={styles.accuracyContainer}>
+                      <Text style={styles.accuracyLabel}>Historical Accuracy</Text>
+                      <View style={styles.accuracyBar}>
+                        <MotiView
+                          from={{ width: '0%' }}
+                          animate={{ width: `${aiSuggestions.historicalAccuracy * 100}%` }}
+                          transition={{ type: 'timing', duration: 1000 }}
+                          style={styles.accuracyFill}
+                        />
+                      </View>
+                      <Text style={styles.accuracyValue}>
+                        {Math.round(aiSuggestions.historicalAccuracy * 100)}%
+                      </Text>
+                    </View>
+
+                    <View style={styles.improvementsList}>
+                      <Text style={[
+                        styles.suggestionsTitle,
+                        colorScheme === 'dark' && styles.suggestionsTitleDark
+                      ]}>
+                        Suggested Improvements
+                      </Text>
+                      {aiSuggestions.improvements.map((improvement, index) => (
+                        <MotiView
+                          key={index}
+                          from={{ opacity: 0, translateX: -20 }}
+                          animate={{ opacity: 1, translateX: 0 }}
+                          transition={{ delay: index * 150 }}
+                          style={styles.improvementItem}
+                        >
+                          <MaterialIcons name="lightbulb" size={20} color="#3b82f6" />
+                          <Text style={[
+                            styles.improvementText,
+                            colorScheme === 'dark' && styles.improvementTextDark
+                          ]}>
+                            {improvement}
+                          </Text>
+                        </MotiView>
+                      ))}
+                    </View>
+
+                    <View style={styles.suggestedTags}>
+                      <Text style={[
+                        styles.suggestionsTitle,
+                        colorScheme === 'dark' && styles.suggestionsTitleDark
+                      ]}>
+                        Suggested Tags
+                      </Text>
+                      <View style={styles.tagsList}>
+                        {aiSuggestions.suggestedTags.map((tag, index) => (
+                          <MotiView
+                            key={index}
+                            from={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: index * 100 }}
+                          >
+                            <TouchableOpacity
+                              style={styles.suggestedTag}
+                              onPress={() => {
+                                if (!tags.includes(tag)) {
+                                  setTags([...tags, tag]);
+                                  calculatePoints();
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                }
+                              }}
+                            >
+                              <MaterialIcons name="add" size={20} color="#3b82f6" />
+                              <Text style={styles.suggestedTagText}>{tag}</Text>
+                            </TouchableOpacity>
+                          </MotiView>
+                        ))}
+                      </View>
+                    </View>
+                  </BlurView>
+                </MotiView>
+              )}
+            </AnimatePresence>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 20 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'timing', duration: 600, delay: 200 }}
+            >
+              <BlurView
+                intensity={20}
+                tint={colorScheme}
+                style={styles.imagesContainer}
+              >
+                <Text style={[
+                  styles.sectionTitle,
+                  colorScheme === 'dark' && styles.sectionTitleDark
+                ]}>
+                  Photos
+                </Text>
+                <View style={styles.imageGrid}>
+                  {images.map((uri, index) => (
+                    <MotiView
+                      key={index}
+                      from={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', delay: index * 100 }}
+                      style={styles.imageWrapper}
+                    >
+                      <Image source={{ uri }} style={styles.image} />
+                      <TouchableOpacity
+                        style={styles.removeImage}
+                        onPress={() => removeImage(index)}
+                      >
+                        <BlurView intensity={80} tint="dark" style={styles.removeImageBlur}>
+                          <MaterialIcons name="close" size={20} color="#ffffff" />
+                        </BlurView>
+                      </TouchableOpacity>
+                    </MotiView>
+                  ))}
+                  {images.length < 5 && (
+                    <TouchableOpacity style={styles.addImage} onPress={pickImage}>
+                      <MaterialIcons name="add-photo-alternate" size={32} color="#3b82f6" />
+                      <Text style={styles.addImageText}>Add Photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </BlurView>
+
+              <BlurView
+                intensity={20}
+                tint={colorScheme}
+                style={styles.tagsContainer}
+              >
+                <Text style={[
+                  styles.sectionTitle,
+                  colorScheme === 'dark' && styles.sectionTitleDark
+                ]}>
+                  Tags
+                </Text>
+                <View style={styles.tagInput}>
+                  <TextInput
+                    style={[
+                      styles.tagTextInput,
+                      colorScheme === 'dark' && styles.tagTextInputDark
+                    ]}
+                    placeholder="Add tags (e.g., architecture, 1800s)..."
+                    placeholderTextColor="#64748b"
+                    value={tagInput}
+                    onChangeText={setTagInput}
+                    onSubmitEditing={addTag}
+                    maxLength={20}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.addTagButton,
+                      !tagInput.trim() && styles.addTagButtonDisabled
+                    ]}
+                    onPress={addTag}
+                    disabled={!tagInput.trim()}
+                  >
+                    <MaterialIcons
+                      name="add"
+                      size={24}
+                      color={tagInput.trim() ? '#3b82f6' : '#64748b'}
+                    />
                   </TouchableOpacity>
                 </View>
-              ))}
-            </View>
-          </View>
-        </ScrollView>
+                <View style={styles.tags}>
+                  {tags.map((tag, index) => (
+                    <MotiView
+                      key={index}
+                      from={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', delay: index * 50 }}
+                    >
+                      <BlurView
+                        intensity={20}
+                        tint={colorScheme}
+                        style={styles.tag}
+                      >
+                        <Text style={styles.tagText}>{tag}</Text>
+                        <TouchableOpacity
+                          onPress={() => removeTag(index)}
+                          style={styles.removeTag}
+                        >
+                          <MaterialIcons name="close" size={16} color="#64748b" />
+                        </TouchableOpacity>
+                      </BlurView>
+                    </MotiView>
+                  ))}
+                </View>
+              </BlurView>
+            </MotiView>
+          </ScrollView>
 
-        <View style={[
-          styles.footer,
-          colorScheme === 'dark' && styles.footerDark
-        ]}>
-          <TouchableOpacity
+          <BlurView
+            intensity={30}
+            tint={colorScheme}
             style={[
-              styles.submitButton,
-              loading && styles.submitButtonDisabled
+              styles.footer,
+              colorScheme === 'dark' && styles.footerDark
             ]}
-            onPress={handleSubmit}
-            disabled={loading || !title.trim() || !story.trim()}
           >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <MaterialIcons name="send" size={24} color="#ffffff" />
-                <Text style={styles.submitButtonText}>Share Story</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                loading && styles.submitButtonDisabled
+              ]}
+              onPress={handleSubmit}
+              disabled={loading || !title.trim() || !story.trim()}
+            >
+              <LinearGradient
+                colors={loading ? ['#94a3b8', '#64748b'] : ['#3b82f6', '#2563eb']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.submitGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <MaterialIcons name="send" size={24} color="#ffffff" />
+                    <Text style={styles.submitButtonText}>Share Story</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </BlurView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  containerDark: {
-    backgroundColor: '#0f172a',
   },
   keyboardAvoid: {
     flex: 1,
@@ -573,15 +678,16 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    gap: 16,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#0f172a',
   },
@@ -591,87 +697,90 @@ const styles = StyleSheet.create({
   pointsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
   pointsText: {
     color: '#fbbf24',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 4,
+    marginLeft: 8,
+  },
+  formContainer: {
+    borderRadius: 20,
+    padding: 16,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   titleInput: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 16,
+    fontSize: 20,
     color: '#0f172a',
-    fontSize: 18,
-    marginBottom: 16,
+    fontWeight: '600',
   },
   titleInputDark: {
-    backgroundColor: '#1e293b',
     color: '#ffffff',
   },
   storyInput: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 16,
-    color: '#0f172a',
     fontSize: 16,
+    color: '#0f172a',
     minHeight: 200,
     textAlignVertical: 'top',
-    marginBottom: 16,
+    lineHeight: 24,
   },
   storyInputDark: {
-    backgroundColor: '#1e293b',
     color: '#ffffff',
   },
+  analyzeButtonContainer: {
+    marginVertical: 8,
+  },
   analyzeButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  analyzeGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    paddingVertical: 16,
+    gap: 8,
   },
   analyzeButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
   },
   analyzingContainer: {
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 16,
+    padding: 24,
   },
   analyzingText: {
     color: '#0f172a',
     fontSize: 16,
-    marginTop: 8,
+    marginTop: 12,
   },
   analyzingTextDark: {
     color: '#e2e8f0',
   },
   suggestionsContainer: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   accuracyContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   accuracyLabel: {
     color: '#3b82f6',
     fontSize: 14,
     fontWeight: '600',
-    marginRight: 8,
+    marginRight: 12,
   },
   accuracyBar: {
     flex: 1,
@@ -683,95 +792,38 @@ const styles = StyleSheet.create({
   accuracyFill: {
     height: '100%',
     backgroundColor: '#3b82f6',
+    borderRadius: 4,
   },
   accuracyValue: {
     color: '#3b82f6',
     fontSize: 14,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: 12,
   },
-  improvementsList: {
-    marginBottom: 16,
-  },
-  suggestionsTitle: {
-    color: '#0f172a',
-    fontSize: 16,
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8,
-  },
-  suggestionsTitleDark: {
-    color: '#e2e8f0',
-  },
-  improvementItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  improvementText: {
     color: '#0f172a',
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
+    marginBottom: 12,
   },
-  improvementTextDark: {
-    color: '#e2e8f0',
-  },
-  suggestedTags: {
-    marginBottom: 16,
-  },
-  tagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  suggestedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  suggestedTagText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    marginLeft: 4,
-  },
-  relatedStories: {
-    marginTop: 8,
-  },
-  relatedStoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  relatedStoryText: {
-    color: '#0f172a',
-    fontSize: 14,
-    flex: 1,
-    marginLeft: 8,
-  },
-  relatedStoryTextDark: {
-    color: '#e2e8f0',
-  },
-  relevanceText: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '500',
+  sectionTitleDark: {
+    color: '#ffffff',
   },
   imagesContainer: {
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  imageGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 16,
   },
   imageWrapper: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
+    width: IMAGE_SIZE,
+    height: IMAGE_SIZE,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   image: {
@@ -780,32 +832,42 @@ const styles = StyleSheet.create({
   },
   removeImage: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    top: 8,
+    right: 8,
+  },
+  removeImageBlur: {
     borderRadius: 12,
     padding: 4,
   },
   addImage: {
-    width: 100,
-    height: 100,
+    width: IMAGE_SIZE,
+    height: IMAGE_SIZE,
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: '#3b82f6',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  addImageText: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 8,
+  },
   tagsContainer: {
-    marginBottom: 16,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   tagInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   tagTextInput: {
     flex: 1,
@@ -819,6 +881,9 @@ const styles = StyleSheet.create({
   addTagButton: {
     padding: 8,
   },
+  addTagButtonDisabled: {
+    opacity: 0.5,
+  },
   tags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -827,10 +892,11 @@ const styles = StyleSheet.create({
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 16,
+    borderRadius: 20,
     paddingVertical: 6,
     paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   tagText: {
     color: '#3b82f6',
@@ -843,29 +909,29 @@ const styles = StyleSheet.create({
   footer: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderTopColor: 'rgba(226, 232, 240, 0.1)',
   },
   footerDark: {
-    borderTopColor: '#1e293b',
-    backgroundColor: '#0f172a',
+    borderTopColor: 'rgba(30, 41, 59, 0.5)',
   },
   submitButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   submitButtonDisabled: {
-    backgroundColor: '#94a3b8',
+    opacity: 0.7,
+  },
+  submitGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
   },
   submitButtonText: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '600',
-    marginLeft: 8,
   },
 });
 

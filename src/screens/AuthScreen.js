@@ -11,26 +11,56 @@ import {
   Platform,
   useColorScheme,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ExpoLinking from 'expo-linking';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MotiView, MotiText } from 'moti';
 import { supabase } from '../services/supabase';
 
-// Debug logging function
-const logDebug = (context, message, data = null) => {
-  console.log(`[${context}] ${message}`, data ? data : '');
-};
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Error logging function
-const logError = (context, error, additionalInfo = null) => {
-  console.error(`[${context}] Error:`, error);
-  if (error.message) console.error(`[${context}] Message:`, error.message);
-  if (error.status) console.error(`[${context}] Status:`, error.status);
-  if (error.statusText) console.error(`[${context}] Status Text:`, error.statusText);
-  if (error.data) console.error(`[${context}] Error Data:`, error.data);
-  if (additionalInfo) console.error(`[${context}] Additional Info:`, additionalInfo);
+const FormInput = ({ icon, ...props }) => {
+  const colorScheme = useColorScheme();
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <MotiView
+      animate={{
+        borderColor: isFocused 
+          ? colorScheme === 'dark' ? '#3b82f6' : '#2563eb'
+          : colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+      }}
+      style={[
+        styles.inputContainer,
+        colorScheme === 'dark' && styles.inputContainerDark,
+      ]}
+    >
+      <MaterialIcons
+        name={icon}
+        size={20}
+        color={isFocused 
+          ? colorScheme === 'dark' ? '#3b82f6' : '#2563eb'
+          : colorScheme === 'dark' ? '#64748b' : '#94a3b8'
+        }
+        style={styles.inputIcon}
+      />
+      <TextInput
+        {...props}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        placeholderTextColor={colorScheme === 'dark' ? '#64748b' : '#94a3b8'}
+        style={[
+          styles.input,
+          colorScheme === 'dark' && styles.inputDark,
+        ]}
+      />
+    </MotiView>
+  );
 };
 
 const AuthScreen = ({ navigation }) => {
@@ -44,53 +74,35 @@ const AuthScreen = ({ navigation }) => {
   const colorScheme = useColorScheme();
 
   useEffect(() => {
-    logDebug('AuthScreen', 'Component mounted');
     checkAuth();
     setupDeepLinking();
   }, []);
 
   const setupDeepLinking = () => {
-    logDebug('AuthScreen', 'Setting up deep linking');
     const handleUrl = async ({ url }) => {
-      logDebug('AuthScreen', 'Deep link URL received', { url });
       if (url) {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (session && !error) {
-          logDebug('AuthScreen', 'Valid session found, navigating back');
           navigation.goBack();
-        } else if (error) {
-          logError('AuthScreen', error, { url });
         }
       }
     };
 
     const subscription = ExpoLinking.addEventListener('url', handleUrl);
-
     ExpoLinking.getInitialURL().then(url => {
-      if (url) {
-        logDebug('AuthScreen', 'Initial URL found', { url });
-        handleUrl({ url });
-      }
+      if (url) handleUrl({ url });
     });
 
-    return () => {
-      logDebug('AuthScreen', 'Cleaning up deep linking listener');
-      subscription.remove();
-    };
+    return () => subscription.remove();
   };
 
   const checkAuth = async () => {
     try {
-      logDebug('AuthScreen', 'Checking authentication status');
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
-      
-      if (session) {
-        logDebug('AuthScreen', 'Active session found, navigating back');
-        navigation.goBack();
-      }
+      if (session) navigation.goBack();
     } catch (error) {
-      logError('AuthScreen', error);
+      console.error('Auth error:', error);
     }
   };
 
@@ -128,8 +140,6 @@ const AuthScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
-      logDebug('AuthScreen', `Attempting ${isLogin ? 'login' : 'registration'}`, { email });
-
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -139,12 +149,10 @@ const AuthScreen = ({ navigation }) => {
         if (error) throw error;
 
         if (data?.session) {
-          logDebug('AuthScreen', 'Login successful');
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           navigation.goBack();
         }
       } else {
-        // Register new user directly with Supabase
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -160,11 +168,6 @@ const AuthScreen = ({ navigation }) => {
 
         if (error) throw error;
 
-        logDebug('AuthScreen', 'Registration response', {
-          user: data?.user?.email,
-          session: !!data?.session,
-        });
-
         if (data?.user && !data?.session) {
           Alert.alert(
             'Verification Email Sent',
@@ -172,7 +175,6 @@ const AuthScreen = ({ navigation }) => {
             [{ text: 'OK' }]
           );
 
-          // Clear form
           setEmail('');
           setPassword('');
           setFirstName('');
@@ -181,12 +183,6 @@ const AuthScreen = ({ navigation }) => {
         }
       }
     } catch (error) {
-      logError('AuthScreen', error, {
-        isLogin,
-        email,
-        firstName: isLogin ? null : firstName,
-        lastName: isLogin ? null : lastName,
-      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Error', error.message);
     } finally {
@@ -196,7 +192,6 @@ const AuthScreen = ({ navigation }) => {
 
   const handleGoogleAuth = async () => {
     try {
-      logDebug('AuthScreen', 'Attempting Google auth');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -211,187 +206,218 @@ const AuthScreen = ({ navigation }) => {
       if (error) throw error;
 
       if (data) {
-        logDebug('AuthScreen', 'Google auth successful');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      logError('AuthScreen', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Error', 'Failed to sign in with Google. Please try again.');
     }
   };
 
   return (
-    <SafeAreaView style={[
-      styles.container,
-      colorScheme === 'dark' && styles.containerDark
-    ]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.content}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
-            <Text style={[
-              styles.title,
-              colorScheme === 'dark' && styles.titleDark
-            ]}>
-              {isLogin ? 'Welcome Back' : 'Create Account'}
-            </Text>
-            <Text style={[
-              styles.subtitle,
-              colorScheme === 'dark' && styles.subtitleDark
-            ]}>
-              {isLogin
-                ? 'Sign in to share your historical discoveries'
-                : 'Join the community of history enthusiasts'}
-            </Text>
-          </View>
-
-          <View style={styles.form}>
-            {!isLogin && (
-              <>
-                <TextInput
-                  style={[
-                    styles.input,
-                    colorScheme === 'dark' && styles.inputDark
-                  ]}
-                  placeholder="First Name"
-                  placeholderTextColor="#64748b"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  autoCapitalize="words"
-                />
-
-                <TextInput
-                  style={[
-                    styles.input,
-                    colorScheme === 'dark' && styles.inputDark
-                  ]}
-                  placeholder="Last Name"
-                  placeholderTextColor="#64748b"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  autoCapitalize="words"
-                />
-
-                <TextInput
-                  style={[
-                    styles.input,
-                    colorScheme === 'dark' && styles.inputDark
-                  ]}
-                  placeholder="Phone (optional)"
-                  placeholderTextColor="#64748b"
-                  value={phone}
-                  onChangeText={handlePhoneChange}
-                  keyboardType="phone-pad"
-                />
-              </>
-            )}
-
-            <TextInput
-              style={[
-                styles.input,
-                colorScheme === 'dark' && styles.inputDark
-              ]}
-              placeholder="Email"
-              placeholderTextColor="#64748b"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-
-            <TextInput
-              style={[
-                styles.input,
-                colorScheme === 'dark' && styles.inputDark
-              ]}
-              placeholder="Password"
-              placeholderTextColor="#64748b"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-
-            <TouchableOpacity
-              style={[
-                styles.button,
-                loading && styles.buttonDisabled
-              ]}
-              onPress={handleEmailAuth}
-              disabled={loading}
+    <LinearGradient
+      colors={colorScheme === 'dark' 
+        ? ['#0f172a', '#1e293b']
+        : ['#ffffff', '#f1f5f9']
+      }
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.content}
+        >
+          <ScrollView 
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            <MotiView
+              from={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: 'timing', duration: 600 }}
+              style={styles.header}
             >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {isLogin ? 'Sign In' : 'Create Account'}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={[
-                styles.dividerText,
-                colorScheme === 'dark' && styles.dividerTextDark
-              ]}>
-                or
-              </Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.googleButton}
-              onPress={handleGoogleAuth}
-            >
-              <MaterialIcons name="google" size={24} color="#DB4437" />
-              <Text style={styles.googleButtonText}>
-                Continue with Google
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.switchButton}
-              onPress={() => setIsLogin(!isLogin)}
-            >
-              <Text style={[
-                styles.switchText,
-                colorScheme === 'dark' && styles.switchTextDark
-              ]}>
+              <MaterialIcons
+                name="history-edu"
+                size={48}
+                color={colorScheme === 'dark' ? '#3b82f6' : '#2563eb'}
+              />
+              <MotiText
+                from={{ opacity: 0, translateY: 20 }}
+                animate={{ opacity: 1, translateY: 0 }}
+                transition={{ delay: 200 }}
+                style={[
+                  styles.title,
+                  colorScheme === 'dark' && styles.titleDark
+                ]}
+              >
+                {isLogin ? 'Welcome Back' : 'Create Account'}
+              </MotiText>
+              <MotiText
+                from={{ opacity: 0, translateY: 20 }}
+                animate={{ opacity: 1, translateY: 0 }}
+                transition={{ delay: 300 }}
+                style={[
+                  styles.subtitle,
+                  colorScheme === 'dark' && styles.subtitleDark
+                ]}
+              >
                 {isLogin
-                  ? "Don't have an account? Sign Up"
-                  : 'Already have an account? Sign In'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                  ? 'Sign in to share your historical discoveries'
+                  : 'Join the community of history enthusiasts'}
+              </MotiText>
+            </MotiView>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 20 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ delay: 400 }}
+              style={styles.form}
+            >
+              {!isLogin && (
+                <>
+                  <FormInput
+                    icon="person"
+                    placeholder="First Name"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    autoCapitalize="words"
+                  />
+                  <FormInput
+                    icon="person-outline"
+                    placeholder="Last Name"
+                    value={lastName}
+                    onChangeText={setLastName}
+                    autoCapitalize="words"
+                  />
+                  <FormInput
+                    icon="phone"
+                    placeholder="Phone (optional)"
+                    value={phone}
+                    onChangeText={handlePhoneChange}
+                    keyboardType="phone-pad"
+                  />
+                </>
+              )}
+
+              <FormInput
+                icon="email"
+                placeholder="Email"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+
+              <FormInput
+                icon="lock"
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  loading && styles.buttonDisabled
+                ]}
+                onPress={handleEmailAuth}
+                disabled={loading}
+              >
+                <LinearGradient
+                  colors={['#3b82f6', '#2563eb']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.buttonGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.buttonText}>
+                      {isLogin ? 'Sign In' : 'Create Account'}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={[
+                  styles.dividerLine,
+                  colorScheme === 'dark' && styles.dividerLineDark
+                ]} />
+                <Text style={[
+                  styles.dividerText,
+                  colorScheme === 'dark' && styles.dividerTextDark
+                ]}>
+                  or
+                </Text>
+                <View style={[
+                  styles.dividerLine,
+                  colorScheme === 'dark' && styles.dividerLineDark
+                ]} />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.googleButton,
+                  colorScheme === 'dark' && styles.googleButtonDark
+                ]}
+                onPress={handleGoogleAuth}
+              >
+                <MaterialIcons name="google" size={24} color="#DB4437" />
+                <Text style={[
+                  styles.googleButtonText,
+                  colorScheme === 'dark' && styles.googleButtonTextDark
+                ]}>
+                  Continue with Google
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.switchButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setIsLogin(!isLogin);
+                }}
+              >
+                <Text style={[
+                  styles.switchText,
+                  colorScheme === 'dark' && styles.switchTextDark
+                ]}>
+                  {isLogin
+                    ? "Don't have an account? Sign Up"
+                    : 'Already have an account? Sign In'}
+                </Text>
+              </TouchableOpacity>
+            </MotiView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  containerDark: {
-    backgroundColor: '#0f172a',
   },
   content: {
     flex: 1,
-    padding: 16,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    padding: 24,
   },
   header: {
     alignItems: 'center',
     marginVertical: 32,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#0f172a',
+    marginTop: 24,
     marginBottom: 8,
   },
   titleDark: {
@@ -401,6 +427,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     textAlign: 'center',
+    maxWidth: SCREEN_WIDTH * 0.8,
   },
   subtitleDark: {
     color: '#94a3b8',
@@ -408,25 +435,43 @@ const styles = StyleSheet.create({
   form: {
     gap: 16,
   },
-  input: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+    overflow: 'hidden',
+  },
+  inputContainerDark: {
+    backgroundColor: '#1e293b',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  inputIcon: {
     padding: 16,
+  },
+  input: {
+    flex: 1,
     fontSize: 16,
     color: '#0f172a',
+    paddingVertical: 16,
+    paddingRight: 16,
   },
   inputDark: {
-    backgroundColor: '#1e293b',
     color: '#ffffff',
   },
   button: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 8,
   },
   buttonDisabled: {
-    backgroundColor: '#94a3b8',
+    opacity: 0.7,
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   buttonText: {
     color: '#ffffff',
@@ -436,16 +481,21 @@ const styles = StyleSheet.create({
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginVertical: 24,
+    gap: 12,
   },
   dividerLine: {
     flex: 1,
     height: 1,
     backgroundColor: '#e2e8f0',
   },
+  dividerLineDark: {
+    backgroundColor: '#334155',
+  },
   dividerText: {
     color: '#64748b',
     fontSize: 14,
+    fontWeight: '500',
   },
   dividerTextDark: {
     color: '#94a3b8',
@@ -455,24 +505,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    gap: 8,
+    gap: 12,
+  },
+  googleButtonDark: {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
   },
   googleButtonText: {
     color: '#0f172a',
     fontSize: 16,
     fontWeight: '600',
   },
+  googleButtonTextDark: {
+    color: '#ffffff',
+  },
   switchButton: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 16,
   },
   switchText: {
     color: '#3b82f6',
     fontSize: 14,
+    fontWeight: '500',
   },
   switchTextDark: {
     color: '#60a5fa',

@@ -1,58 +1,72 @@
-import React, { useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import React, { useEffect, useCallback, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import { MaterialIcons } from '@expo/vector-icons';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
-  const fadeAnim = new Animated.Value(0);
-  const slideAnim = new Animated.Value(50);
-  const footerPulseAnim = new Animated.Value(1);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Initial animations
-    const initialAnimation = Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]);
-
-    // Footer pulse animation
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(footerPulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
+    // Initial animations sequence
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
           useNativeDriver: true,
         }),
-        Animated.timing(footerPulseAnim, {
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
           toValue: 1,
-          duration: 1000,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.spring(rotateAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Continuous pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1500,
           useNativeDriver: true,
         }),
       ])
-    );
-
-    initialAnimation.start();
-    pulseAnimation.start();
-
-    return () => {
-      initialAnimation.stop();
-      pulseAnimation.stop();
-    };
+    ).start();
   }, []);
 
   const handleNavigateToExplore = useCallback(() => {
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       navigation.navigate('Explore');
     } catch (error) {
       console.error('Navigation error:', error);
@@ -67,11 +81,18 @@ const HomeScreen = ({ navigation }) => {
       }
     });
 
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   return (
     <GestureDetector gesture={gesture}>
       <LinearGradient
-        colors={['#1a0f3d', '#2d1b69', '#1a0f3d']}
+        colors={['#000000', '#1a0f3d', '#2d1b69']}
         style={styles.background}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
       >
         <StatusBar style="light" />
         <SafeAreaView style={styles.container}>
@@ -80,21 +101,30 @@ const HomeScreen = ({ navigation }) => {
               styles.content,
               {
                 opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
+                transform: [
+                  { translateY: slideAnim },
+                  { scale: scaleAnim },
+                ],
               },
             ]}
           >
-            <View style={styles.headerContainer}>
-              <Text style={styles.title}>NanoHistory</Text>
-              <Text style={styles.subtitle}>
-                Experience History in a New Dimension
-              </Text>
-            </View>
+            <BlurView intensity={20} tint="dark" style={styles.headerBlur}>
+              <View style={styles.headerContainer}>
+                <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                  <MaterialIcons name="history-edu" size={48} color="#fff" />
+                </Animated.View>
+                <Text style={styles.title}>NanoHistory</Text>
+                <Text style={styles.subtitle}>
+                  Experience History in a New Dimension
+                </Text>
+              </View>
+            </BlurView>
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.mainButton}
                 onPress={handleNavigateToExplore}
+                activeOpacity={0.8}
               >
                 <LinearGradient
                   colors={['#4f46e5', '#7c3aed']}
@@ -102,6 +132,9 @@ const HomeScreen = ({ navigation }) => {
                   end={{ x: 1, y: 1 }}
                   style={styles.gradientButton}
                 >
+                  <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                    <MaterialIcons name="explore" size={32} color="#fff" />
+                  </Animated.View>
                   <Text style={styles.mainButtonText}>Start Exploring</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -109,20 +142,30 @@ const HomeScreen = ({ navigation }) => {
               <View style={styles.secondaryButtonsContainer}>
                 <TouchableOpacity
                   style={[styles.secondaryButton, { marginRight: 8 }]}
-                  onPress={() => navigation.navigate('AIGuide')}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    navigation.navigate('AIGuide');
+                  }}
+                  activeOpacity={0.8}
                 >
-                  <View style={styles.glassBackground}>
+                  <BlurView intensity={30} tint="dark" style={styles.glassBackground}>
+                    <MaterialIcons name="psychology" size={24} color="#60a5fa" />
                     <Text style={styles.secondaryButtonText}>AI Guide</Text>
-                  </View>
+                  </BlurView>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.secondaryButton}
-                  onPress={() => navigation.navigate('CreateStory')}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    navigation.navigate('CreateStory');
+                  }}
+                  activeOpacity={0.8}
                 >
-                  <View style={styles.glassBackground}>
+                  <BlurView intensity={30} tint="dark" style={styles.glassBackground}>
+                    <MaterialIcons name="add-photo-alternate" size={24} color="#10b981" />
                     <Text style={styles.secondaryButtonText}>Share Story</Text>
-                  </View>
+                  </BlurView>
                 </TouchableOpacity>
               </View>
             </View>
@@ -131,11 +174,14 @@ const HomeScreen = ({ navigation }) => {
               style={[
                 styles.footer,
                 {
-                  transform: [{ scale: footerPulseAnim }],
+                  transform: [{ scale: pulseAnim }],
                 },
               ]}
             >
-              <Text style={styles.footerText}>⬆️ Swipe up to explore nearby stories</Text>
+              <BlurView intensity={20} tint="dark" style={styles.footerBlur}>
+                <MaterialIcons name="swipe-up" size={24} color="#fff" style={styles.footerIcon} />
+                <Text style={styles.footerText}>Swipe up to explore nearby stories</Text>
+              </BlurView>
             </Animated.View>
           </Animated.View>
         </SafeAreaView>
@@ -156,15 +202,20 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'space-between',
   },
+  headerBlur: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginTop: 40,
+  },
   headerContainer: {
-    marginTop: 60,
     alignItems: 'center',
+    padding: 24,
   },
   title: {
     fontSize: 48,
     fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 12,
+    marginVertical: 16,
     textAlign: 'center',
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
@@ -173,9 +224,9 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 20,
     color: '#d1d5db',
-    marginBottom: 40,
     textAlign: 'center',
     fontWeight: '500',
+    lineHeight: 28,
   },
   buttonContainer: {
     width: '100%',
@@ -184,7 +235,7 @@ const styles = StyleSheet.create({
   },
   mainButton: {
     marginBottom: 16,
-    borderRadius: 20,
+    borderRadius: 24,
     elevation: 8,
     shadowColor: '#4f46e5',
     shadowOffset: { width: 0, height: 4 },
@@ -192,13 +243,16 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   gradientButton: {
-    paddingVertical: 18,
-    borderRadius: 20,
+    paddingVertical: 20,
+    borderRadius: 24,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
   mainButtonText: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     letterSpacing: 0.5,
   },
@@ -208,28 +262,43 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   glassBackground: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-    backdropFilter: 'blur(10px)',
+    gap: 8,
   },
   secondaryButtonText: {
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   footer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: Platform.OS === 'ios' ? 40 : 20,
+  },
+  footerBlur: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  footerIcon: {
+    marginRight: 8,
   },
   footerText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 16,
     fontWeight: '500',
   },
