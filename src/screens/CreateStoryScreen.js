@@ -22,6 +22,7 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createStory, supabase } from '../services/supabase';
+import { awardPoints, POINT_VALUES } from '../services/points';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_SIZE = (SCREEN_WIDTH - 48) / 3;
@@ -268,12 +269,21 @@ const CreateStoryScreen = ({ navigation }) => {
         author_id: session.user.id
       };
 
-      await createStory(storyData);
+      // Create the story
+      const createdStory = await createStory(storyData);
+
+      // Award points for sharing a story
+      try {
+        await awardPoints(session.user.id, 'STORY_SHARE', createdStory.location_id);
+      } catch (pointsError) {
+        console.error('Error awarding points:', pointsError);
+        // Don't block the story submission if points fail
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         'Success!',
-        `Story submitted successfully! You earned ${points} points.`,
+        `Story submitted successfully! You earned ${POINT_VALUES.STORY_SHARE} points.`,
         [
           {
             text: 'OK',

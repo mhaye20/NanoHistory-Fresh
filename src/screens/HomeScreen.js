@@ -18,7 +18,6 @@ const HomeScreen = ({ navigation }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Initial animations sequence
     Animated.sequence([
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -47,7 +46,6 @@ const HomeScreen = ({ navigation }) => {
       }),
     ]).start();
 
-    // Continuous pulse animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -89,7 +87,7 @@ const HomeScreen = ({ navigation }) => {
   return (
     <GestureDetector gesture={gesture}>
       <LinearGradient
-        colors={['#000000', '#1a0f3d', '#2d1b69']}
+        colors={['#000000', '#1a1a2e', '#16213e']}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -115,7 +113,7 @@ const HomeScreen = ({ navigation }) => {
                 </Animated.View>
                 <Text style={styles.title}>NanoHistory</Text>
                 <Text style={styles.subtitle}>
-                  Experience History in a New Dimension
+                  Where Every Place Has a Story
                 </Text>
               </View>
             </BlurView>
@@ -135,7 +133,7 @@ const HomeScreen = ({ navigation }) => {
                   <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                     <MaterialIcons name="explore" size={32} color="#fff" />
                   </Animated.View>
-                  <Text style={styles.mainButtonText}>Start Exploring</Text>
+                  <Text style={styles.mainButtonText}>Discover Stories</Text>
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -150,7 +148,7 @@ const HomeScreen = ({ navigation }) => {
                 >
                   <BlurView intensity={30} tint="dark" style={styles.glassBackground}>
                     <MaterialIcons name="psychology" size={24} color="#60a5fa" />
-                    <Text style={styles.secondaryButtonText}>AI Guide</Text>
+                    <Text style={styles.secondaryButtonText}>History Guide</Text>
                   </BlurView>
                 </TouchableOpacity>
 
@@ -180,7 +178,7 @@ const HomeScreen = ({ navigation }) => {
             >
               <BlurView intensity={20} tint="dark" style={styles.footerBlur}>
                 <MaterialIcons name="swipe-up" size={24} color="#fff" style={styles.footerIcon} />
-                <Text style={styles.footerText}>Swipe up to explore nearby stories</Text>
+                <Text style={styles.footerText}>Swipe up to explore history around you</Text>
               </BlurView>
             </Animated.View>
           </Animated.View>
@@ -206,6 +204,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     marginTop: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   headerContainer: {
     alignItems: 'center',
@@ -220,6 +220,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+    letterSpacing: 1,
   },
   subtitle: {
     fontSize: 20,
@@ -227,6 +228,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
     lineHeight: 28,
+    letterSpacing: 0.5,
   },
   buttonContainer: {
     width: '100%',
@@ -249,6 +251,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   mainButtonText: {
     color: '#ffffff',
@@ -274,13 +278,14 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     gap: 8,
   },
   secondaryButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   footer: {
     alignItems: 'center',
@@ -293,6 +298,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   footerIcon: {
     marginRight: 8,
@@ -301,6 +308,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 16,
     fontWeight: '500',
+    letterSpacing: 0.5,
   },
 });
 

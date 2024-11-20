@@ -10,13 +10,18 @@ import {
   Dimensions,
   Animated,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { getLocationDetails } from '../services/supabase';
+import * as Location from 'expo-location';
+import { BlurView } from 'expo-blur';
+import { getLocationDetails, incrementVisitCount } from '../services/supabase';
 import { generateHistoricalStory, generateVoice } from '../services/ai';
+import { awardPoints, POINT_VALUES } from '../services/points';
+import { supabase } from '../services/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.5;
@@ -30,10 +35,15 @@ const LocationDetailScreen = ({ route, navigation }) => {
   const [error, setError] = useState(null);
   const [playingAudio, setPlayingAudio] = useState(false);
   const [expandedImage, setExpandedImage] = useState(false);
+  const [pointsAwarded, setPointsAwarded] = useState(false);
+  const [pointsAnimation, setPointsAnimation] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
+  const pointsAnim = useRef(new Animated.Value(0)).current;
+  const pointsOpacity = useRef(new Animated.Value(0)).current;
 
   const imageScale = scrollY.interpolate({
     inputRange: [-100, 0, 100],
@@ -49,6 +59,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     fetchLocationDetails();
+    getCurrentLocation();
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -67,6 +78,87 @@ const LocationDetailScreen = ({ route, navigation }) => {
     };
   }, []);
 
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Required',
+          'Please enable location services to earn points for visiting historical sites.'
+        );
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setUserLocation(location);
+    } catch (err) {
+      console.error('Error getting location:', err);
+    }
+  };
+
+  const isWithinRange = (userLoc, targetLoc, rangeInMeters = 100) => {
+    if (!userLoc || !targetLoc) return false;
+
+    // Calculate distance using Haversine formula
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = userLoc.coords.latitude * Math.PI/180;
+    const φ2 = targetLoc.latitude * Math.PI/180;
+    const Δφ = (targetLoc.latitude - userLoc.coords.latitude) * Math.PI/180;
+    const Δλ = (targetLoc.longitude - userLoc.coords.longitude) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    const distance = R * c;
+    return distance <= rangeInMeters;
+  };
+
+  const showPointsAnimation = (points) => {
+    setPointsAnimation(points);
+    pointsAnim.setValue(0);
+    pointsOpacity.setValue(1);
+
+    Animated.sequence([
+      Animated.spring(pointsAnim, {
+        toValue: -100,
+        tension: 40,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pointsOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      })
+    ]).start(() => setPointsAnimation(null));
+  };
+
+  const awardVisitPoints = async () => {
+    try {
+      // Check if user is at the location
+      if (!isWithinRange(userLocation, location)) {
+        console.log('User not at location, no points awarded');
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await incrementVisitCount(location.id);
+        await awardPoints(session.user.id, 'FIRST_VISIT', location.id);
+        showPointsAnimation(POINT_VALUES.FIRST_VISIT);
+        setPointsAwarded(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (err) {
+      console.error('Error awarding points:', err);
+      // Don't block the experience if points fail
+    }
+  };
+
   const fetchLocationDetails = async () => {
     if (!isMounted.current) return;
 
@@ -81,6 +173,11 @@ const LocationDetailScreen = ({ route, navigation }) => {
         if (!isMounted.current) return;
         setAiStory(story);
       }
+
+      // Award points for visiting if not already awarded
+      if (!pointsAwarded) {
+        await awardVisitPoints();
+      }
       
       setError(null);
     } catch (err) {
@@ -94,8 +191,28 @@ const LocationDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleARView = () => {
+  const handleARView = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      // Check if user is at the location
+      if (!isWithinRange(userLocation, location)) {
+        Alert.alert(
+          'Location Required',
+          'You need to be at the historical site to earn points for AR photos.'
+        );
+        navigation.navigate('ARView', { location: details });
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await awardPoints(session.user.id, 'AR_PHOTO', location.id);
+        showPointsAnimation(POINT_VALUES.AR_PHOTO);
+      }
+    } catch (err) {
+      console.error('Error awarding AR points:', err);
+      // Don't block AR view if points fail
+    }
     navigation.navigate('ARView', { location: details });
   };
 
@@ -153,18 +270,38 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {pointsAnimation && (
+        <Animated.View style={[
+          styles.pointsAnimation,
+          {
+            transform: [{ translateY: pointsAnim }],
+            opacity: pointsOpacity,
+          }
+        ]}>
+          <BlurView intensity={80} tint="dark" style={styles.pointsBadge}>
+            <MaterialIcons name="stars" size={20} color="#fbbf24" />
+            <Text style={styles.pointsText}>+{pointsAnimation} points</Text>
+          </BlurView>
+        </Animated.View>
+      )}
+
       <Animated.View style={[
         styles.header,
         { opacity: headerOpacity }
       ]}>
-        <LinearGradient
-          colors={['rgba(15, 23, 42, 0.9)', 'rgba(15, 23, 42, 0.8)']}
-          style={styles.headerGradient}
-        >
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {details?.title}
-          </Text>
-        </LinearGradient>
+        <BlurView intensity={80} tint="dark" style={styles.headerBlur}>
+          <View style={styles.headerContent}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <MaterialIcons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {details?.title}
+            </Text>
+          </View>
+        </BlurView>
       </Animated.View>
 
       <Animated.ScrollView
@@ -189,12 +326,15 @@ const LocationDetailScreen = ({ route, navigation }) => {
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['rgba(0,0,0,0.3)', 'transparent', 'rgba(0,0,0,0.8)']}
+              colors={['rgba(0,0,0,0.3)', 'transparent', 'rgba(0,0,0,0.9)']}
               style={styles.imageGradient}
             />
             <View style={styles.imageOverlay}>
               <Text style={styles.title}>{details?.title}</Text>
-              <Text style={styles.period}>{details?.period}</Text>
+              <View style={styles.periodContainer}>
+                <MaterialIcons name="history" size={20} color="#fff" />
+                <Text style={styles.period}>{details?.period}</Text>
+              </View>
             </View>
           </Animated.View>
         </TouchableOpacity>
@@ -205,7 +345,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
         }}>
           {/* AI Generated Story */}
           {(details?.aiGeneratedStory || aiStory) && (
-            <View style={styles.storyContainer}>
+            <BlurView intensity={20} tint="dark" style={styles.storyContainer}>
               <View style={styles.storyHeader}>
                 <MaterialIcons name="psychology" size={24} color="#3b82f6" />
                 <Text style={styles.storyHeaderText}>AI Historical Insights</Text>
@@ -215,22 +355,18 @@ const LocationDetailScreen = ({ route, navigation }) => {
               </Text>
               <View style={styles.factsList}>
                 {(details?.aiGeneratedStory?.facts || aiStory?.facts || []).map((fact, index) => (
-                  <Animated.View
+                  <BlurView
                     key={index}
-                    style={[
-                      styles.factItem,
-                      {
-                        opacity: fadeAnim,
-                        transform: [{ translateX: slideAnim }]
-                      }
-                    ]}
+                    intensity={20}
+                    tint="dark"
+                    style={styles.factItem}
                   >
                     <MaterialIcons name="lightbulb" size={16} color="#3b82f6" />
                     <Text style={styles.factText}>{fact}</Text>
-                  </Animated.View>
+                  </BlurView>
                 ))}
               </View>
-            </View>
+            </BlurView>
           )}
 
           {/* User Stories */}
@@ -241,15 +377,11 @@ const LocationDetailScreen = ({ route, navigation }) => {
                 <Text style={styles.sectionHeaderText}>Community Stories</Text>
               </View>
               {details.userStories.map((story, index) => (
-                <Animated.View
+                <BlurView
                   key={index}
-                  style={[
-                    styles.userStory,
-                    {
-                      opacity: fadeAnim,
-                      transform: [{ translateY: slideAnim }]
-                    }
-                  ]}
+                  intensity={20}
+                  tint="dark"
+                  style={styles.userStory}
                 >
                   <Text style={styles.userStoryTitle}>{story.title}</Text>
                   <Text style={styles.userStoryContent}>{story.content}</Text>
@@ -276,33 +408,37 @@ const LocationDetailScreen = ({ route, navigation }) => {
                   {story.tags && story.tags.length > 0 && (
                     <View style={styles.tagsContainer}>
                       {story.tags.map((tag, tagIndex) => (
-                        <View
+                        <BlurView
                           key={tagIndex}
+                          intensity={20}
+                          tint="dark"
                           style={styles.tag}
                         >
                           <Text style={styles.tagText}>{tag}</Text>
-                        </View>
+                        </BlurView>
                       ))}
                     </View>
                   )}
-                </Animated.View>
+                </BlurView>
               ))}
             </View>
           )}
         </Animated.View>
       </Animated.ScrollView>
 
-      <View style={styles.buttonContainer}>
-        <LinearGradient
-          colors={['rgba(15, 23, 42, 0.8)', 'rgba(15, 23, 42, 0.95)']}
-          style={styles.buttonGradient}
-        >
+      <BlurView intensity={80} tint="dark" style={styles.buttonContainer}>
+        <View style={styles.buttonContent}>
           <TouchableOpacity
             style={styles.arButton}
             onPress={handleARView}
           >
-            <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
-            <Text style={styles.buttonText}>View in AR</Text>
+            <LinearGradient
+              colors={['#3b82f6', '#2563eb']}
+              style={styles.buttonGradient}
+            >
+              <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
+              <Text style={styles.buttonText}>View in AR</Text>
+            </LinearGradient>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -310,17 +446,22 @@ const LocationDetailScreen = ({ route, navigation }) => {
             onPress={handleAudioNarration}
             disabled={playingAudio || (!details?.aiGeneratedStory && !aiStory)}
           >
-            <MaterialIcons 
-              name={playingAudio ? "pause" : "volume-up"} 
-              size={24} 
-              color="#ffffff" 
-            />
-            <Text style={styles.buttonText}>
-              {playingAudio ? 'Playing Audio...' : 'Listen to Story'}
-            </Text>
+            <LinearGradient
+              colors={playingAudio ? ['#1e293b', '#0f172a'] : ['#475569', '#334155']}
+              style={styles.buttonGradient}
+            >
+              <MaterialIcons 
+                name={playingAudio ? "pause" : "volume-up"} 
+                size={24} 
+                color="#ffffff" 
+              />
+              <Text style={styles.buttonText}>
+                {playingAudio ? 'Playing Audio...' : 'Listen to Story'}
+              </Text>
+            </LinearGradient>
           </TouchableOpacity>
-        </LinearGradient>
-      </View>
+        </View>
+      </BlurView>
 
       {expandedImage && (
         <Animated.View 
@@ -339,6 +480,14 @@ const LocationDetailScreen = ({ route, navigation }) => {
               style={styles.expandedImage}
               resizeMode="contain"
             />
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={handleImagePress}
+            >
+              <BlurView intensity={80} tint="dark" style={styles.closeButtonBlur}>
+                <MaterialIcons name="close" size={24} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
           </TouchableOpacity>
         </Animated.View>
       )}
@@ -349,7 +498,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000',
   },
   header: {
     position: 'absolute',
@@ -358,11 +507,21 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 100,
   },
-  headerGradient: {
+  headerBlur: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 20,
   },
+  backButton: {
+    marginRight: 16,
+  },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '600',
     color: '#ffffff',
@@ -393,10 +552,15 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 12,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  periodContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   period: {
     fontSize: 18,
@@ -407,11 +571,11 @@ const styles = StyleSheet.create({
   },
   storyContainer: {
     margin: 16,
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.2)',
+    overflow: 'hidden',
   },
   storyHeader: {
     flexDirection: 'row',
@@ -436,10 +600,12 @@ const styles = StyleSheet.create({
   factItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    padding: 12,
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 16,
     gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.2)',
+    overflow: 'hidden',
   },
   factText: {
     flex: 1,
@@ -462,12 +628,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   userStory: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 20,
     marginBottom: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.2)',
+    overflow: 'hidden',
   },
   userStoryTitle: {
     fontSize: 18,
@@ -485,7 +651,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   mediaImageContainer: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     marginRight: 12,
   },
@@ -502,9 +668,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
+    overflow: 'hidden',
   },
   tagText: {
     color: '#10b981',
@@ -516,31 +682,20 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
-  buttonGradient: {
+  buttonContent: {
     padding: 16,
     gap: 12,
   },
-  arButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 16,
-    borderRadius: 16,
+  buttonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-  },
-  audioButton: {
-    backgroundColor: '#475569',
     paddingVertical: 16,
     borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-  },
-  playingButton: {
-    backgroundColor: '#1e293b',
   },
   buttonText: {
     color: '#ffffff',
@@ -551,7 +706,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000',
     padding: 20,
   },
   loadingText: {
@@ -567,11 +722,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   retryButton: {
-    backgroundColor: '#3b82f6',
+    marginTop: 16,
     paddingVertical: 12,
     paddingHorizontal: 24,
+    backgroundColor: '#3b82f6',
     borderRadius: 12,
-    marginTop: 16,
   },
   retryButtonText: {
     color: '#ffffff',
@@ -580,7 +735,7 @@ const styles = StyleSheet.create({
   },
   expandedImageContainer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
     zIndex: 1000,
   },
   expandedImageOverlay: {
@@ -591,6 +746,42 @@ const styles = StyleSheet.create({
   expandedImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1001,
+  },
+  closeButtonBlur: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  pointsAnimation: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '40%',
+    zIndex: 1000,
+  },
+  pointsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  pointsText: {
+    color: '#fbbf24',
+    fontSize: 18,
+    fontWeight: '600',
   },
 });
 
