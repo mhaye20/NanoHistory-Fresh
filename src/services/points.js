@@ -2,13 +2,13 @@ import { supabase, adminClient } from './supabase';
 
 // Point values for different actions
 export const POINT_VALUES = {
-  FIRST_VISIT: 100,
-  REVISIT: 50,
-  DAILY_STREAK: 100,
-  STORY_SHARE: 300,
-  AR_PHOTO: 200,
-  FIRST_STORY: 500,
-  ACHIEVEMENT_UNLOCK: 250,
+  FIRST_VISIT: 25,        
+  REVISIT: 10,          
+  DAILY_STREAK: 50,     
+  STORY_SHARE: 150,     
+  AR_PHOTO: 35,         
+  FIRST_STORY: 200,     
+  ACHIEVEMENT_UNLOCK: 100, 
 };
 
 // Achievement definitions
@@ -17,7 +17,7 @@ export const ACHIEVEMENTS = {
     id: 'first_steps',
     title: 'First Steps',
     description: 'Visit your first historical location',
-    points: 100,
+    points: 50,           // Reduced from 100
     icon: 'directions-walk',
     requirement: 1,
     type: 'visits'
@@ -26,7 +26,7 @@ export const ACHIEVEMENTS = {
     id: 'explorer',
     title: 'History Explorer',
     description: 'Visit 5 different historical locations',
-    points: 250,
+    points: 100,          // Reduced from 250
     icon: 'explore',
     requirement: 5,
     type: 'visits'
@@ -35,7 +35,7 @@ export const ACHIEVEMENTS = {
     id: 'historian',
     title: 'Master Historian',
     description: 'Visit 20 different historical locations',
-    points: 500,
+    points: 250,          // Reduced from 500
     icon: 'history-edu',
     requirement: 20,
     type: 'visits'
@@ -44,7 +44,7 @@ export const ACHIEVEMENTS = {
     id: 'storyteller',
     title: 'Storyteller',
     description: 'Share your first story',
-    points: 200,
+    points: 100,          // Reduced from 200
     icon: 'create',
     requirement: 1,
     type: 'stories'
@@ -53,7 +53,7 @@ export const ACHIEVEMENTS = {
     id: 'photographer',
     title: 'History Photographer',
     description: 'Take 5 AR photos',
-    points: 300,
+    points: 150,          // Reduced from 300
     icon: 'camera',
     requirement: 5,
     type: 'photos'
@@ -62,20 +62,20 @@ export const ACHIEVEMENTS = {
     id: 'dedicated',
     title: 'Dedicated Explorer',
     description: 'Maintain a 7-day visit streak',
-    points: 400,
+    points: 200,          // Reduced from 400
     icon: 'star',
     requirement: 7,
     type: 'streak'
   }
 };
 
-// Level definitions
+// Level definitions - adjusted thresholds to match new point values
 export const LEVELS = [
-  { level: 1, title: 'Novice Explorer', minPoints: 0, maxPoints: 1000 },
-  { level: 2, title: 'History Enthusiast', minPoints: 1001, maxPoints: 2500 },
-  { level: 3, title: 'Time Traveler', minPoints: 2501, maxPoints: 5000 },
-  { level: 4, title: 'History Master', minPoints: 5001, maxPoints: 10000 },
-  { level: 5, title: 'Legendary Historian', minPoints: 10001, maxPoints: Infinity }
+  { level: 1, title: 'Novice Explorer', minPoints: 0, maxPoints: 250 },      // Reduced from 1000
+  { level: 2, title: 'History Enthusiast', minPoints: 251, maxPoints: 750 }, // Reduced from 2500
+  { level: 3, title: 'Time Traveler', minPoints: 751, maxPoints: 1500 },     // Reduced from 5000
+  { level: 4, title: 'History Master', minPoints: 1501, maxPoints: 3000 },   // Reduced from 10000
+  { level: 5, title: 'Legendary Historian', minPoints: 3001, maxPoints: Infinity }
 ];
 
 // Initialize user data
