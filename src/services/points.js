@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, adminClient } from './supabase';
 
 // Point values for different actions
 export const POINT_VALUES = {
@@ -82,43 +82,84 @@ export const LEVELS = [
 const initializeUserData = async (userId) => {
   console.log('Initializing user data for:', userId);
   try {
-    // Initialize user_points
-    const { data: pointsData, error: pointsError } = await supabase
+    // Check if user_points exists first
+    const { data: existingPoints, error: checkError } = await adminClient
       .from('user_points')
-      .upsert([{
-        user_id: userId,
-        total_points: 0,
-        visit_streak: 0,
-        last_visit_date: null
-      }], { onConflict: 'user_id' })
-      .select();
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-    if (pointsError) {
-      console.error('Error initializing points:', pointsError);
-      throw pointsError;
+    if (checkError && checkError.code !== 'PGRST116') { // Not found error
+      console.error('Error checking existing points:', checkError);
+      throw checkError;
     }
 
-    console.log('Points data initialized:', pointsData[0]);
+    let pointsData = existingPoints;
 
-    // Initialize user_stats
-    const { data: statsData, error: statsError } = await supabase
+    // Only initialize if no existing data
+    if (!existingPoints) {
+      const { data: newPointsData, error: pointsError } = await adminClient
+        .from('user_points')
+        .insert([{
+          user_id: userId,
+          total_points: 0,
+          visit_streak: 0,
+          last_visit_date: null
+        }])
+        .select()
+        .single();
+
+      if (pointsError) {
+        console.error('Error initializing points:', pointsError);
+        throw pointsError;
+      }
+
+      console.log('Points data initialized:', newPointsData);
+      pointsData = newPointsData;
+    } else {
+      console.log('Using existing points data:', existingPoints);
+    }
+
+    // Check if user_stats exists
+    const { data: existingStats, error: statsCheckError } = await adminClient
       .from('user_stats')
-      .upsert([{
-        user_id: userId,
-        unique_visits: 0,
-        total_stories: 0,
-        total_photos: 0,
-        max_streak: 0
-      }], { onConflict: 'user_id' })
-      .select();
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-    if (statsError) {
-      console.error('Error initializing stats:', statsError);
-      throw statsError;
+    if (statsCheckError && statsCheckError.code !== 'PGRST116') { // Not found error
+      console.error('Error checking existing stats:', statsCheckError);
+      throw statsCheckError;
     }
 
-    console.log('Stats data initialized:', statsData[0]);
-    return { pointsData: pointsData[0], statsData: statsData[0] };
+    let statsData = existingStats;
+
+    // Only initialize if no existing data
+    if (!existingStats) {
+      const { data: newStatsData, error: statsError } = await adminClient
+        .from('user_stats')
+        .insert([{
+          user_id: userId,
+          unique_visits: 0,
+          total_stories: 0,
+          total_photos: 0,
+          max_streak: 0
+        }])
+        .select()
+        .single();
+
+      if (statsError) {
+        console.error('Error initializing stats:', statsError);
+        throw statsError;
+      }
+
+      console.log('Stats data initialized:', newStatsData);
+      statsData = newStatsData;
+    } else {
+      console.log('Using existing stats data:', existingStats);
+    }
+
+    return { pointsData, statsData };
   } catch (error) {
     console.error('Error in initializeUserData:', error);
     throw error;
@@ -133,7 +174,7 @@ export const getUserPointsAndLevel = async (userId) => {
     await initializeUserData(userId);
 
     // Now get the points data
-    const { data: pointsData, error: pointsError } = await supabase
+    const { data: pointsData, error: pointsError } = await adminClient
       .from('user_points')
       .select('total_points, visit_streak, last_visit_date')
       .eq('user_id', userId)
@@ -181,9 +222,9 @@ export const awardPoints = async (userId, action, locationId = null, userLocatio
       throw new Error('Invalid action type');
     }
 
-    // For location-based actions, verify user's location
-    if (locationId && userLocation) {
-      console.log('Checking location:', { locationId, userLocation });
+    // Only verify location for FIRST_VISIT and REVISIT actions
+    if ((action === 'FIRST_VISIT' || action === 'REVISIT') && locationId && userLocation) {
+      console.log('Checking location for visit:', { locationId, userLocation });
       const atLocation = await isAtLocation(
         locationId,
         userLocation.coords.latitude,
@@ -199,48 +240,136 @@ export const awardPoints = async (userId, action, locationId = null, userLocatio
     // Ensure user data exists
     await initializeUserData(userId);
 
-    // Call the award_points function
-    const { data, error } = await supabase.rpc(
-      'award_points',
-      { 
-        p_user_id: userId,
-        p_points: points,
-        p_location_id: locationId,
-        p_action: action
-      }
-    );
+    // Get current points
+    const { data: currentData, error: currentError } = await adminClient
+      .from('user_points')
+      .select('total_points')
+      .eq('user_id', userId)
+      .single();
 
-    if (error) {
-      console.error('Error in award_points RPC:', error);
-      throw error;
+    if (currentError) {
+      console.error('Error getting current points:', currentError);
+      throw currentError;
     }
 
-    console.log('Points awarded:', data);
+    // Calculate new points
+    const currentPoints = currentData?.total_points || 0;
+    const newPoints = currentPoints + points;
+    console.log('Points calculation:', { currentPoints, pointsToAdd: points, newPoints });
 
-    // If no data returned, get current points
-    if (!data || data.length === 0) {
-      console.log('No data returned from award_points, fetching current points');
-      const { data: pointsData, error: pointsError } = await supabase
-        .from('user_points')
-        .select('total_points, visit_streak')
+    // Record action first
+    const { error: actionError } = await adminClient
+      .from('user_actions')
+      .insert([{
+        user_id: userId,
+        location_id: locationId,
+        action_type: action,
+        points: points,
+        created_at: new Date().toISOString()
+      }]);
+
+    if (actionError) {
+      console.error('Error recording action:', actionError);
+      throw actionError;
+    }
+
+    console.log('Action recorded successfully');
+
+    // Update points
+    const { data: pointsData, error: pointsError } = await adminClient
+      .from('user_points')
+      .update({ 
+        total_points: newPoints,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (pointsError) {
+      console.error('Error updating points:', pointsError);
+      throw pointsError;
+    }
+
+    console.log('Points updated successfully:', pointsData);
+
+    // Update stats if needed
+    if (action === 'STORY_SHARE') {
+      const { data: currentStats, error: statsError } = await adminClient
+        .from('user_stats')
+        .select('total_stories')
         .eq('user_id', userId)
         .single();
 
-      if (pointsError) {
-        console.error('Error getting points after award:', pointsError);
-        throw pointsError;
+      if (statsError) {
+        console.error('Error getting current stats:', statsError);
+        throw statsError;
       }
 
-      console.log('Current points data:', pointsData);
-      return pointsData;
+      const newTotalStories = (currentStats?.total_stories || 0) + 1;
+      const { error: updateStatsError } = await adminClient
+        .from('user_stats')
+        .update({ 
+          total_stories: newTotalStories,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId);
+
+      if (updateStatsError) {
+        console.error('Error updating stats:', updateStatsError);
+      } else {
+        console.log('Stats updated successfully');
+      }
     }
 
-    // Check for newly unlocked achievements
+    // Verify the points were actually updated
+    const { data: verifyData, error: verifyError } = await adminClient
+      .from('user_points')
+      .select('total_points')
+      .eq('user_id', userId)
+      .single();
+
+    if (verifyError) {
+      console.error('Error verifying points update:', verifyError);
+    } else {
+      console.log('Points verification:', verifyData);
+    }
+
+    // Check for achievements after awarding points
     await checkAchievements(userId);
 
-    return data[0];
+    return pointsData;
   } catch (error) {
     console.error('Error in awardPoints:', error);
+    throw error;
+  }
+};
+
+// Get user's achievements
+export const getUserAchievements = async (userId) => {
+  console.log('Getting achievements for user:', userId);
+  try {
+    // Ensure user data exists
+    await initializeUserData(userId);
+
+    const { data, error } = await adminClient
+      .from('user_achievements')
+      .select('achievement_id, earned_at')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error getting achievements:', error);
+      throw error;
+    }
+
+    console.log('Retrieved achievements:', data);
+
+    return data.map(achievement => ({
+      ...ACHIEVEMENTS[achievement.achievement_id],
+      earned_at: achievement.earned_at
+    }));
+  } catch (error) {
+    console.error('Error in getUserAchievements:', error);
     throw error;
   }
 };
@@ -253,7 +382,7 @@ export const checkAchievements = async (userId) => {
     await initializeUserData(userId);
 
     // Get user's stats
-    const { data: stats, error: statsError } = await supabase
+    const { data: stats, error: statsError } = await adminClient
       .from('user_stats')
       .select('unique_visits, total_stories, total_photos, max_streak')
       .eq('user_id', userId)
@@ -267,7 +396,7 @@ export const checkAchievements = async (userId) => {
     console.log('User stats:', stats);
 
     // Get user's current achievements
-    const { data: currentAchievements, error: achievementsError } = await supabase
+    const { data: currentAchievements, error: achievementsError } = await adminClient
       .from('user_achievements')
       .select('achievement_id')
       .eq('user_id', userId);
@@ -315,7 +444,7 @@ export const checkAchievements = async (userId) => {
     // Award new achievements
     if (newAchievements.length > 0) {
       console.log('Awarding new achievements:', newAchievements);
-      const { error: insertError } = await supabase
+      const { error: insertError } = await adminClient
         .from('user_achievements')
         .insert(newAchievements);
 
@@ -333,35 +462,6 @@ export const checkAchievements = async (userId) => {
     return newAchievements;
   } catch (error) {
     console.error('Error in checkAchievements:', error);
-    throw error;
-  }
-};
-
-// Get user's achievements
-export const getUserAchievements = async (userId) => {
-  console.log('Getting achievements for user:', userId);
-  try {
-    // Ensure user data exists
-    await initializeUserData(userId);
-
-    const { data, error } = await supabase
-      .from('user_achievements')
-      .select('achievement_id, earned_at')
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error getting achievements:', error);
-      throw error;
-    }
-
-    console.log('Retrieved achievements:', data);
-
-    return data.map(achievement => ({
-      ...ACHIEVEMENTS[achievement.achievement_id],
-      earned_at: achievement.earned_at
-    }));
-  } catch (error) {
-    console.error('Error in getUserAchievements:', error);
     throw error;
   }
 };
@@ -386,7 +486,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 const isAtLocation = async (locationId, userLat, userLon) => {
   console.log('Checking if user is at location:', { locationId, userLat, userLon });
   try {
-    const { data: location, error } = await supabase
+    const { data: location, error } = await adminClient
       .from('locations')
       .select('latitude, longitude')
       .eq('id', locationId)

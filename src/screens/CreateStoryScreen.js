@@ -22,7 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createStory, supabase } from '../services/supabase';
+import { createStory, supabase, adminClient } from '../services/supabase';
 import { awardPoints, POINT_VALUES } from '../services/points';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -335,6 +335,17 @@ const handleSubmit = async () => {
   setLoading(true);
 
   try {
+    console.log('Creating story with data:', {
+      title: title.trim(),
+      content: story.trim(),
+      mediaUrls: images,
+      tags: tags,
+      accuracy: accuracy,
+      latitude: currentLocation.coords.latitude,
+      longitude: currentLocation.coords.longitude,
+      authorId: session.user.id
+    });
+
     const storyData = {
       title: title.trim(),
       content: story.trim(),
@@ -348,11 +359,11 @@ const handleSubmit = async () => {
 
     // Create the story
     const createdStory = await createStory(storyData);
-    console.log('Created story:', createdStory); // Debug log
+    console.log('Created story:', createdStory);
 
     // Get location ID from the nested location object
     const locationId = createdStory.location?.id;
-    console.log('Location ID:', locationId); // Debug log
+    console.log('Location ID:', locationId);
 
     if (!locationId) {
       throw new Error('No location ID returned from story creation');
@@ -360,7 +371,34 @@ const handleSubmit = async () => {
 
     // Award points for sharing a story
     try {
-      await awardPoints(session.user.id, 'STORY_SHARE', locationId, userLocation);
+      console.log('Attempting to award points:', {
+        userId: session.user.id,
+        action: 'STORY_SHARE',
+        locationId,
+        userLocation: currentLocation
+      });
+
+      const pointsResult = await awardPoints(
+        session.user.id,
+        'STORY_SHARE',
+        locationId,
+        currentLocation
+      );
+      
+      console.log('Points awarded result:', pointsResult);
+
+      // Verify points were actually awarded
+      const { data: pointsData, error: pointsError } = await adminClient
+        .from('user_points')
+        .select('total_points')
+        .eq('user_id', session.user.id)
+        .single();
+
+      if (pointsError) {
+        console.error('Error verifying points:', pointsError);
+      } else {
+        console.log('Current user points:', pointsData);
+      }
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
@@ -376,7 +414,14 @@ const handleSubmit = async () => {
         ]
       );
     } catch (pointsError) {
-      console.error('Points error:', pointsError); // Debug log
+      console.error('Points error:', pointsError);
+      console.error('Points error details:', {
+        message: pointsError.message,
+        code: pointsError.code,
+        details: pointsError.details,
+        hint: pointsError.hint
+      });
+
       if (pointsError.message === 'User not at location') {
         Alert.alert(
           'Story Shared',
@@ -393,6 +438,13 @@ const handleSubmit = async () => {
     }
   } catch (error) {
     console.error('Error submitting story:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
+    
     Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
     Alert.alert(
       'Error',

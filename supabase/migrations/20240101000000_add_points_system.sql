@@ -42,6 +42,13 @@ CREATE TABLE user_actions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Grant necessary permissions
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
 -- Create function to award points
 CREATE OR REPLACE FUNCTION award_points(
     p_user_id UUID,
@@ -51,10 +58,11 @@ CREATE OR REPLACE FUNCTION award_points(
 ) RETURNS TABLE (
     total_points INTEGER,
     visit_streak INTEGER
-) LANGUAGE plpgsql SECURITY DEFINER AS $$
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
     v_last_visit TIMESTAMP WITH TIME ZONE;
     v_streak INTEGER;
+    v_current_points INTEGER;
 BEGIN
     -- Initialize user data if not exists
     INSERT INTO user_points (user_id, total_points, visit_streak)
@@ -65,9 +73,9 @@ BEGIN
     VALUES (p_user_id)
     ON CONFLICT (user_id) DO NOTHING;
 
-    -- Get last visit date
-    SELECT last_visit_date, visit_streak 
-    INTO v_last_visit, v_streak
+    -- Get current points and streak
+    SELECT total_points, visit_streak, last_visit_date 
+    INTO v_current_points, v_streak, v_last_visit
     FROM user_points 
     WHERE user_id = p_user_id;
 
@@ -116,16 +124,15 @@ BEGIN
     INSERT INTO user_actions (user_id, location_id, action_type, points)
     VALUES (p_user_id, p_location_id, p_action, p_points);
 
-    -- Award points
+    -- Award points and return result
     UPDATE user_points 
-    SET total_points = total_points + p_points
-    WHERE user_id = p_user_id;
+    SET total_points = COALESCE(v_current_points, 0) + p_points,
+        updated_at = NOW()
+    WHERE user_id = p_user_id
+    RETURNING user_points.total_points, user_points.visit_streak INTO total_points, visit_streak;
 
-    -- Return updated points and streak
-    RETURN QUERY
-    SELECT points.total_points, points.visit_streak
-    FROM user_points points
-    WHERE points.user_id = p_user_id;
+    -- Return the result
+    RETURN NEXT;
 END;
 $$;
 
@@ -147,3 +154,6 @@ CREATE TRIGGER update_user_stats_timestamp
     BEFORE UPDATE ON user_stats
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
+
+-- Grant execute permission on the function
+GRANT EXECUTE ON FUNCTION award_points(UUID, INTEGER, BIGINT, TEXT) TO authenticated, service_role;

@@ -72,7 +72,7 @@ logDebug('Supabase', 'Configuration', {
 });
 
 // Initialize admin client with service role key for database operations
-const adminClient = createClient(
+export const adminClient = createClient(
   env.EXPO_PUBLIC_SUPABASE_URL,
   env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
 );
@@ -684,6 +684,7 @@ export const getImageUrl = (path) => {
 
 export default {
   supabase,
+  adminClient,
   signInWithEmail,
   signUpWithEmail,
   signOut,
