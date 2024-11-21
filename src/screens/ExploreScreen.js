@@ -556,7 +556,7 @@ const handleLocationPress = useCallback((location) => {
         }
       />
 
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.fab}
         onPress={() => {
           navigation.navigate('CreateStory');
@@ -569,7 +569,7 @@ const handleLocationPress = useCallback((location) => {
         >
           <MaterialIcons name="add" size={24} color="#fff" />
         </LinearGradient>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
     </SafeAreaView>
   );
 };
