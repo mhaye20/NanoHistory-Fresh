@@ -247,15 +247,117 @@ const LocationDetailScreen = ({ route, navigation }) => {
     if (!isMounted.current) return;
 
     try {
+      console.log('=== LocationDetailScreen Debug Logs ===');
+      console.log('Fetching details for location:', {
+        locationId: location.id,
+        title: location.title,
+        latitude: location.latitude,
+        longitude: location.longitude
+      });
+
       const locationDetails = await getLocationDetails(location.id);
-      if (!isMounted.current) return;
+      console.log('Location details response:', {
+        hasDetails: !!locationDetails,
+        title: locationDetails?.title,
+        hasAiStory: !!locationDetails?.aiGeneratedStory,
+        aiStoryType: typeof locationDetails?.aiGeneratedStory
+      });
+
+      if (!isMounted.current) {
+        console.log('Component unmounted during fetch, aborting updates');
+        return;
+      }
       
       setDetails(locationDetails);
       
       if (!locationDetails.aiGeneratedStory) {
+        console.log('Generating new AI story for location:', location.id);
         const story = await generateHistoricalStory(locationDetails);
-        if (!isMounted.current) return;
-        setAiStory(story);
+        console.log('Raw story response:', story);
+
+        if (!isMounted.current) {
+          console.log('Component unmounted during story generation, aborting updates');
+          return;
+        }
+
+        // Process the story data
+        let processedStory;
+        try {
+          if (typeof story === 'object' && !Array.isArray(story)) {
+            // If story is an object with numeric keys (split characters)
+            if (Object.keys(story).every(key => !isNaN(key) || ['imageUrl', 'audioUrl', 'simplifiedVersion'].includes(key))) {
+              console.log('Story is character array, attempting to reconstruct');
+              // Join the characters and parse the JSON
+              const storyString = Object.keys(story)
+                .filter(key => !isNaN(key))
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map(key => story[key])
+                .join('');
+              
+              console.log('Reconstructed story string:', storyString.substring(0, 100) + '...');
+              
+              try {
+                const parsedStory = JSON.parse(storyString);
+                console.log('Parsed story structure:', {
+                  hasStory: !!parsedStory?.story,
+                  hasContent: !!parsedStory?.story?.content,
+                  contentKeys: Object.keys(parsedStory?.story?.content || {})
+                });
+                
+                // Extract the actual story content from the nested structure
+                processedStory = {
+                  story: parsedStory?.story?.content?.story || '',
+                  facts: parsedStory?.story?.content?.facts || [],
+                  historicalPeriods: parsedStory?.story?.content?.historicalPeriods || [],
+                  suggestedActivities: parsedStory?.story?.content?.suggestedActivities || [],
+                  imageUrl: story.imageUrl || parsedStory?.story?.content?.imageUrl
+                };
+              } catch (parseError) {
+                console.error('Error parsing story JSON:', parseError);
+                processedStory = {
+                  story: storyString,
+                  facts: [],
+                  historicalPeriods: [],
+                  suggestedActivities: [],
+                  imageUrl: story.imageUrl
+                };
+              }
+            } else {
+              // Story is already in the correct format
+              processedStory = story;
+            }
+          } else {
+            // Handle string or other formats
+            processedStory = {
+              story: typeof story === 'string' ? story : '',
+              facts: [],
+              historicalPeriods: [],
+              suggestedActivities: [],
+              imageUrl: story?.imageUrl
+            };
+          }
+
+          console.log('Final processed story:', {
+            hasStory: !!processedStory?.story,
+            storyLength: processedStory?.story?.length,
+            storyPreview: processedStory?.story ? processedStory.story.substring(0, 100) + '...' : null,
+            hasFacts: Array.isArray(processedStory?.facts),
+            factsCount: processedStory?.facts?.length,
+            hasHistoricalPeriods: Array.isArray(processedStory?.historicalPeriods),
+            periodsCount: processedStory?.historicalPeriods?.length
+          });
+
+        } catch (err) {
+          console.error('Error processing story:', err);
+          processedStory = {
+            story: 'Error loading story content',
+            facts: [],
+            historicalPeriods: [],
+            suggestedActivities: []
+          };
+        }
+
+        setAiStory(processedStory);
       }
 
       // Award points for visiting if not already awarded
@@ -265,7 +367,11 @@ const LocationDetailScreen = ({ route, navigation }) => {
       
       setError(null);
     } catch (err) {
-      console.error('Error fetching location details:', err);
+      console.error('Error in fetchLocationDetails:', {
+        error: err.message,
+        stack: err.stack,
+        locationId: location.id
+      });
       if (!isMounted.current) return;
       setError('Failed to load location details');
     } finally {
