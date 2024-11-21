@@ -1,4 +1,11 @@
-import { supabase, adminClient } from './supabase';
+import { createClient } from '@supabase/supabase-js';
+import env from '../config/env';
+
+// Initialize admin client with service role key for database operations
+const adminClient = createClient(
+  env.EXPO_PUBLIC_SUPABASE_URL,
+  env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
+);
 
 // Point values for different actions
 export const POINT_VALUES = {
@@ -77,6 +84,60 @@ export const LEVELS = [
   { level: 4, title: 'History Master', minPoints: 1501, maxPoints: 3000 },   // Reduced from 10000
   { level: 5, title: 'Legendary Historian', minPoints: 3001, maxPoints: Infinity }
 ];
+
+// Calculate distance between two points using Haversine formula
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c; // Distance in meters
+};
+
+// Check if user is at location
+export const isAtLocation = async (locationId, userLat, userLon) => {
+  console.log('Checking if user is at location:', { locationId, userLat, userLon });
+  try {
+    const { data: location, error } = await adminClient
+      .from('locations')
+      .select('latitude, longitude, ai_generated_stories')
+      .eq('id', locationId)
+      .single();
+
+    if (error) {
+      console.error('Error getting location:', error);
+      throw error;
+    }
+    if (!location) {
+      console.log('Location not found');
+      return false;
+    }
+
+    console.log('Location data:', location);
+
+    const distance = calculateDistance(
+      userLat,
+      userLon,
+      location.latitude,
+      location.longitude
+    );
+
+    console.log('Distance to location:', distance);
+
+    // Return true if within 100 meters and has AI-generated stories
+    return distance <= 100 && location.ai_generated_stories?.length > 0;
+  } catch (error) {
+    console.error('Error in isAtLocation:', error);
+    return false;
+  }
+};
 
 // Initialize user data
 const initializeUserData = async (userId) => {
@@ -463,59 +524,5 @@ export const checkAchievements = async (userId) => {
   } catch (error) {
     console.error('Error in checkAchievements:', error);
     throw error;
-  }
-};
-
-// Calculate distance between two points using Haversine formula
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
-
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-          Math.cos(φ1) * Math.cos(φ2) *
-          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c; // Distance in meters
-};
-
-// Check if user is at location
-const isAtLocation = async (locationId, userLat, userLon) => {
-  console.log('Checking if user is at location:', { locationId, userLat, userLon });
-  try {
-    const { data: location, error } = await adminClient
-      .from('locations')
-      .select('latitude, longitude')
-      .eq('id', locationId)
-      .single();
-
-    if (error) {
-      console.error('Error getting location:', error);
-      throw error;
-    }
-    if (!location) {
-      console.log('Location not found');
-      return false;
-    }
-
-    console.log('Location data:', location);
-
-    const distance = calculateDistance(
-      userLat,
-      userLon,
-      location.latitude,
-      location.longitude
-    );
-
-    console.log('Distance to location:', distance);
-
-    // Return true if within 100 meters
-    return distance <= 100;
-  } catch (error) {
-    console.error('Error in isAtLocation:', error);
-    return false;
   }
 };

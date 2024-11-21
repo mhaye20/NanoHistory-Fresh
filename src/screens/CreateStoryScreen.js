@@ -22,13 +22,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createStory, supabase, adminClient } from '../services/supabase';
+import { BlurView } from 'expo-blur';
+import { createStory, supabase, adminClient, getNearbyLocations } from '../services/supabase';
 import { awardPoints, POINT_VALUES } from '../services/points';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_SIZE = (SCREEN_WIDTH - 48) / 3;
 
-const CreateStoryScreen = ({ navigation }) => {
+const CreateStoryScreen = ({ route, navigation }) => {
   const [story, setStory] = useState('');
   const [title, setTitle] = useState('');
   const [images, setImages] = useState([]);
@@ -41,6 +42,9 @@ const CreateStoryScreen = ({ navigation }) => {
   const [aiSuggestions, setAiSuggestions] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [accuracy, setAccuracy] = useState(0);
+  const [nearbyLocations, setNearbyLocations] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(route.params?.location || null);
+  const [showLocationSelect, setShowLocationSelect] = useState(false);
   
   const scrollViewRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -69,6 +73,12 @@ const CreateStoryScreen = ({ navigation }) => {
   }, []);
 
   useEffect(() => {
+    if (!selectedLocation) {
+      fetchNearbyLocations();
+    }
+  }, [currentLocation]);
+
+  useEffect(() => {
     if (aiSuggestions) {
       Animated.timing(accuracyAnim, {
         toValue: aiSuggestions.historicalAccuracy,
@@ -77,6 +87,62 @@ const CreateStoryScreen = ({ navigation }) => {
       }).start();
     }
   }, [aiSuggestions]);
+
+  const fetchNearbyLocations = async () => {
+    if (!currentLocation) return;
+
+    try {
+      const { locations } = await getNearbyLocations(
+        currentLocation.coords.latitude,
+        currentLocation.coords.longitude,
+        'all',
+        100 // 100 meter radius
+      );
+
+      // Filter to only show locations with AI stories
+      const historicLocations = locations.filter(loc => loc.aiGeneratedStory);
+      setNearbyLocations(historicLocations);
+    } catch (error) {
+      console.error('Error fetching nearby locations:', error);
+    }
+  };
+
+  const isWithinRange = (userLoc, targetLoc, rangeInMeters = 100) => {
+    if (!userLoc || !targetLoc) return false;
+
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = userLoc.coords.latitude * Math.PI/180;
+    const φ2 = targetLoc.latitude * Math.PI/180;
+    const Δφ = (targetLoc.latitude - userLoc.coords.latitude) * Math.PI/180;
+    const Δλ = (targetLoc.longitude - userLoc.coords.longitude) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    const distance = R * c;
+    return distance <= rangeInMeters;
+  };
+
+  const handleLocationSelect = (location) => {
+    if (!currentLocation) {
+      Alert.alert('Location Required', 'Please enable location services to continue.');
+      return;
+    }
+
+    if (!isWithinRange(currentLocation, location)) {
+      Alert.alert(
+        'Too Far Away',
+        'You need to be at the historical site to share a story about it. Please get closer to the location.'
+      );
+      return;
+    }
+
+    setSelectedLocation(location);
+    setShowLocationSelect(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
 
   const checkAuth = async () => {
     try {
@@ -311,149 +377,172 @@ const CreateStoryScreen = ({ navigation }) => {
     }
   };
 
-const handleSubmit = async () => {
-  if (!title.trim() || !story.trim()) {
-    Alert.alert('Missing Information', 'Please provide a title and story.');
-    return;
-  }
-
-  if (!currentLocation) {
-    await getCurrentLocation();
-  }
-
-  if (!currentLocation) {
-    Alert.alert('Location Required', 'Unable to get your location. Please enable location services and try again.');
-    return;
-  }
-
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (!session) {
-    navigation.navigate('Auth');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    console.log('Creating story with data:', {
-      title: title.trim(),
-      content: story.trim(),
-      mediaUrls: images,
-      tags: tags,
-      accuracy: accuracy,
-      latitude: currentLocation.coords.latitude,
-      longitude: currentLocation.coords.longitude,
-      authorId: session.user.id
-    });
-
-    const storyData = {
-      title: title.trim(),
-      content: story.trim(),
-      media_urls: images,
-      tags: tags,
-      accuracy_score: accuracy,
-      latitude: currentLocation.coords.latitude,
-      longitude: currentLocation.coords.longitude,
-      author_id: session.user.id
-    };
-
-    // Create the story
-    const createdStory = await createStory(storyData);
-    console.log('Created story:', createdStory);
-
-    // Get location ID from the nested location object
-    const locationId = createdStory.location?.id;
-    console.log('Location ID:', locationId);
-
-    if (!locationId) {
-      throw new Error('No location ID returned from story creation');
+  const handleSubmit = async () => {
+    if (!title.trim() || !story.trim()) {
+      Alert.alert('Missing Information', 'Please provide a title and story.');
+      return;
     }
 
-    // Award points for sharing a story
-    try {
-      console.log('Attempting to award points:', {
-        userId: session.user.id,
-        action: 'STORY_SHARE',
-        locationId,
-        userLocation: currentLocation
-      });
+    if (!currentLocation) {
+      await getCurrentLocation();
+    }
 
-      const pointsResult = await awardPoints(
-        session.user.id,
-        'STORY_SHARE',
-        locationId,
-        currentLocation
-      );
-      
-      console.log('Points awarded result:', pointsResult);
+    if (!currentLocation) {
+      Alert.alert('Location Required', 'Unable to get your location. Please enable location services and try again.');
+      return;
+    }
 
-      // Verify points were actually awarded
-      const { data: pointsData, error: pointsError } = await adminClient
-        .from('user_points')
-        .select('total_points')
-        .eq('user_id', session.user.id)
-        .single();
+    if (!selectedLocation) {
+      Alert.alert('Location Required', 'Please select a historical location for your story.');
+      return;
+    }
 
-      if (pointsError) {
-        console.error('Error verifying points:', pointsError);
-      } else {
-        console.log('Current user points:', pointsData);
-      }
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (!isWithinRange(currentLocation, selectedLocation)) {
       Alert.alert(
-        'Success!',
-        `Story submitted successfully! You earned ${POINT_VALUES.STORY_SHARE} points.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.navigate('Explore', { refresh: true });
-            },
-          },
-        ]
+        'Too Far Away',
+        'You need to be at the historical site to share a story about it. Please get closer to the location.'
       );
-    } catch (pointsError) {
-      console.error('Points error:', pointsError);
-      console.error('Points error details:', {
-        message: pointsError.message,
-        code: pointsError.code,
-        details: pointsError.details,
-        hint: pointsError.hint
-      });
+      return;
+    }
 
-      if (pointsError.message === 'User not at location') {
-        Alert.alert(
-          'Story Shared',
-          'Your story was shared successfully, but you need to be at the historical site to earn points.'
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (!session) {
+      navigation.navigate('Auth');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const storyData = {
+        title: title.trim(),
+        content: story.trim(),
+        media_urls: images,
+        tags: tags,
+        accuracy_score: accuracy,
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        author_id: session.user.id,
+        location_id: selectedLocation.id
+      };
+
+      // Create the story
+      const createdStory = await createStory(storyData);
+      console.log('Created story:', createdStory);
+
+      try {
+        const pointsResult = await awardPoints(
+          session.user.id,
+          'STORY_SHARE',
+          selectedLocation.id,
+          currentLocation
         );
-      } else {
-        console.error('Error awarding points:', pointsError);
+        
+        console.log('Points awarded result:', pointsResult);
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Success!',
+          `Story submitted successfully! You earned ${POINT_VALUES.STORY_SHARE} points for sharing at this historic location.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                navigation.navigate('Explore', { refresh: true });
+              },
+            },
+          ]
+        );
+      } catch (pointsError) {
+        console.error('Points error:', pointsError);
         Alert.alert(
           'Story Shared',
           'Your story was shared successfully, but there was an error awarding points.'
         );
+        navigation.navigate('Explore', { refresh: true });
       }
-      navigation.navigate('Explore', { refresh: true });
+    } catch (error) {
+      console.error('Error submitting story:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
+      Alert.alert(
+        'Error',
+        'Failed to submit your story. Please try again.'
+      );
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Error submitting story:', error);
-    console.error('Error details:', {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint
-    });
-    
-    Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Error);
-    Alert.alert(
-      'Error',
-      'Failed to submit your story. Please try again.'
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
+  const LocationSelectModal = () => (
+    <BlurView
+      intensity={80}
+      tint="dark"
+      style={styles.locationSelectModal}
+    >
+      <View style={styles.locationSelectHeader}>
+        <Text style={styles.locationSelectTitle}>Select Historical Location</Text>
+        <TouchableOpacity
+          onPress={() => setShowLocationSelect(false)}
+          style={styles.closeButton}
+        >
+          <MaterialIcons name="close" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.locationsList}>
+        {nearbyLocations.map((location) => (
+          <TouchableOpacity
+            key={location.id}
+            style={styles.locationItem}
+            onPress={() => handleLocationSelect(location)}
+          >
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationTitle}>{location.title}</Text>
+              <Text style={styles.locationDistance}>
+                {Math.round(location.distance)} meters away
+              </Text>
+            </View>
+            <MaterialIcons
+              name="chevron-right"
+              size={24}
+              color="#64748b"
+            />
+          </TouchableOpacity>
+        ))}
+        {nearbyLocations.length === 0 && (
+          <Text style={styles.noLocationsText}>
+            No historical locations found nearby. Please get closer to a historical site to share your story.
+          </Text>
+        )}
+      </ScrollView>
+    </BlurView>
+  );
+
+  const LocationButton = () => (
+    <TouchableOpacity
+      style={styles.locationButton}
+      onPress={() => setShowLocationSelect(true)}
+    >
+      <View style={styles.locationButtonContent}>
+        <MaterialIcons
+          name="location-on"
+          size={24}
+          color={selectedLocation ? '#10b981' : '#64748b'}
+        />
+        <Text style={[
+          styles.locationButtonText,
+          selectedLocation && styles.locationButtonTextSelected
+        ]}>
+          {selectedLocation ? selectedLocation.title : 'Select Historical Location'}
+        </Text>
+      </View>
+      <MaterialIcons
+        name="chevron-right"
+        size={24}
+        color="#64748b"
+      />
+    </TouchableOpacity>
+  );
 
   return (
     <LinearGradient
@@ -520,6 +609,8 @@ const handleSubmit = async () => {
                 }}
                 maxLength={100}
               />
+
+              <LocationButton />
 
               <TextInput
                 style={[
@@ -755,6 +846,7 @@ const handleSubmit = async () => {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      {showLocationSelect && <LocationSelectModal />}
     </LinearGradient>
   );
 };
@@ -822,6 +914,82 @@ const styles = StyleSheet.create({
   titleInputDark: {
     color: '#ffffff',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  locationButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  locationButtonText: {
+    fontSize: 16,
+    color: '#64748b',
+  },
+  locationButtonTextSelected: {
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  locationSelectModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 20,
+  },
+  locationSelectHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  locationSelectTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  locationsList: {
+    flex: 1,
+  },
+  locationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  locationInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  locationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  locationDistance: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  noLocationsText: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 20,
   },
   storyInput: {
     fontSize: 16,
@@ -958,6 +1126,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  sectionTitleDark: {
+    color: '#ffffff',
   },
   imageGrid: {
     flexDirection: 'row',

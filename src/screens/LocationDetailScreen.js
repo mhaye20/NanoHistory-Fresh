@@ -301,7 +301,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   const storyImageUrl = details?.aiGeneratedStory?.imageUrl || aiStory?.imageUrl;
 
-  return (
+return (
     <SafeAreaView style={styles.container}>
       {pointsAnimation && (
         <Animated.View style={[
@@ -493,6 +493,19 @@ const LocationDetailScreen = ({ route, navigation }) => {
               </Text>
             </LinearGradient>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.createStoryButton}
+            onPress={() => navigation.navigate('CreateStory', { location: details })}
+          >
+            <LinearGradient
+              colors={['#10b981', '#059669']}
+              style={styles.buttonGradient}
+            >
+              <MaterialIcons name="create" size={24} color="#ffffff" />
+              <Text style={styles.buttonText}>Share Your Story</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </BlurView>
 
@@ -529,7 +542,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     flex: 1,
     backgroundColor: '#000',
   },
@@ -815,6 +828,11 @@ const styles = StyleSheet.create({
     color: '#fbbf24',
     fontSize: 18,
     fontWeight: '600',
+  },
+    createStoryButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 12,
   },
 });
 

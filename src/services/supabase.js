@@ -386,29 +386,57 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
 export const createStory = async (storyData) => {
   try {
     logDebug('Stories', 'Creating new story', storyData);
-    const { latitude, longitude, ...rest } = storyData;
+    const { latitude, longitude, location_id, ...rest } = storyData;
 
-    // First, check if a location exists at these coordinates
-    const { data: distances, error: distanceError } = await adminClient
-      .rpc('calculate_distances', {
-        lat: latitude,
-        lng: longitude,
-        radius_meters: 100 // Look for locations within 100 meters
-      });
+    let locationId = location_id;
+    let isHistoricLocation = false;
 
-    if (distanceError) {
-      logError('Stories', distanceError, 'Error finding nearest location');
-      throw distanceError;
+    if (!locationId) {
+      // If no location_id provided, find nearest location
+      const { data: distances, error: distanceError } = await adminClient
+        .rpc('calculate_distances', {
+          lat: latitude,
+          lng: longitude,
+          radius_meters: 100 // Look for locations within 100 meters
+        });
+
+      if (distanceError) {
+        logError('Stories', distanceError, 'Error finding nearest location');
+        throw distanceError;
+      }
+
+      if (distances && distances.length > 0) {
+        const nearestLocation = distances[0];
+        
+        // Check if location has AI-generated stories
+        const { data: location, error: locationError } = await adminClient
+          .from('locations')
+          .select('ai_generated_stories')
+          .eq('id', nearestLocation.id)
+          .single();
+
+        if (!locationError && location.ai_generated_stories?.length > 0) {
+          locationId = nearestLocation.id;
+          isHistoricLocation = true;
+          logDebug('Stories', 'User is at historic location', { locationId });
+        }
+      }
+    } else {
+      // If location_id provided, verify it's a historic location
+      const { data: location, error: locationError } = await adminClient
+        .from('locations')
+        .select('ai_generated_stories')
+        .eq('id', locationId)
+        .single();
+
+      if (!locationError && location.ai_generated_stories?.length > 0) {
+        isHistoricLocation = true;
+        logDebug('Stories', 'Using provided historic location', { locationId });
+      }
     }
 
-    let locationId;
-    
-    if (distances && distances.length > 0) {
-      // Use closest existing location
-      locationId = distances[0].id;
-      logDebug('Stories', 'Using existing location', { locationId });
-    } else {
-      // Create new location
+    if (!locationId) {
+      // Create new non-historic location
       const { data: newLocation, error: createLocationError } = await adminClient
         .from('locations')
         .insert([{
@@ -429,7 +457,7 @@ export const createStory = async (storyData) => {
       }
 
       locationId = newLocation.id;
-      logDebug('Stories', 'Created new location', { locationId });
+      logDebug('Stories', 'Created new non-historic location', { locationId });
     }
 
     // Create the story with the location ID
@@ -462,10 +490,14 @@ export const createStory = async (storyData) => {
 
     logDebug('Stories', 'Story created successfully', { 
       storyId: story.id,
-      locationId
+      locationId,
+      isHistoricLocation
     });
 
-    return story;
+    return {
+      ...story,
+      isHistoricLocation
+    };
   } catch (error) {
     logError('Stories', error);
     throw error;
