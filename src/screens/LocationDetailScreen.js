@@ -11,6 +11,7 @@ import {
   Animated,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -22,9 +23,10 @@ import { getLocationDetails, incrementVisitCount } from '../services/supabase';
 import { generateHistoricalStory, generateVoice } from '../services/ai';
 import { awardPoints, POINT_VALUES } from '../services/points';
 import { supabase } from '../services/supabase';
-
+import MapView, { Marker } from 'react-native-maps';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.5;
+const MAP_HEIGHT = 300;
 
 const LocationDetailScreen = ({ route, navigation }) => {
   const { location } = route.params;
@@ -38,6 +40,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
   const [pointsAwarded, setPointsAwarded] = useState(false);
   const [pointsAnimation, setPointsAnimation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+  const [distance, setDistance] = useState(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -77,6 +80,60 @@ const LocationDetailScreen = ({ route, navigation }) => {
       isMounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (userLocation && location) {
+      const dist = calculateDistance(
+        userLocation.coords.latitude,
+        userLocation.coords.longitude,
+        location.latitude,
+        location.longitude
+      );
+      setDistance(dist);
+    }
+  }, [userLocation, location]);
+
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const d = R * c;
+    return d;
+  };
+
+  const deg2rad = (deg) => {
+    return deg * (Math.PI/180);
+  };
+
+  const openInMaps = async (app) => {
+    const scheme = Platform.select({
+      ios: app === 'google' ? 'comgooglemaps://' : 'maps://',
+      android: 'geo:',
+    });
+    const link = Platform.select({
+      ios: app === 'google'
+        ? `${scheme}?q=${location.latitude},${location.longitude}&center=${location.latitude},${location.longitude}`
+        : `${scheme}?q=${location.latitude},${location.longitude}`,
+      android: `${scheme}${location.latitude},${location.longitude}`,
+    });
+
+    const supported = await Linking.canOpenURL(link);
+    if (supported) {
+      await Linking.openURL(link);
+    } else {
+      Alert.alert(
+        'Error',
+        app === 'google'
+          ? 'Google Maps is not installed'
+          : 'Cannot open maps application'
+      );
+    }
+  };
 
   const getCurrentLocation = async () => {
     try {
@@ -301,7 +358,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
   const storyImageUrl = details?.aiGeneratedStory?.imageUrl || aiStory?.imageUrl;
 
-return (
+  return (
     <SafeAreaView style={styles.container}>
       {pointsAnimation && (
         <Animated.View style={[
@@ -376,6 +433,75 @@ return (
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
         }}>
+          {/* Map Section */}
+          <View style={styles.mapContainer}>
+
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+                latitudeDelta: 0.02,
+                longitudeDelta: 0.02,
+              }}
+            >
+              <Marker
+                coordinate={{
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                }}
+                title={details?.title}
+              />
+              {userLocation && (
+                <Marker
+                  coordinate={{
+                    latitude: userLocation.coords.latitude,
+                    longitude: userLocation.coords.longitude,
+                  }}
+                  title="Your Location"
+                  pinColor="#3b82f6"
+                />
+              )}
+            </MapView>
+
+            <BlurView intensity={80} tint="dark" style={styles.mapOverlay}>
+              <View style={styles.distanceContainer}>
+                <MaterialIcons name="place" size={24} color="#3b82f6" />
+                <Text style={styles.distanceText}>
+                  {distance ? `${distance.toFixed(1)} km away` : 'Calculating distance...'}
+                </Text>
+              </View>
+              <View style={styles.mapButtons}>
+                <TouchableOpacity
+                  style={styles.mapButton}
+                  onPress={() => openInMaps('google')}
+                >
+                  <LinearGradient
+                    colors={['#3b82f6', '#2563eb']}
+                    style={styles.mapButtonGradient}
+                  >
+                    <MaterialIcons name="map" size={20} color="#ffffff" />
+                    <Text style={styles.mapButtonText}>Open in Google Maps</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={styles.mapButton}
+                    onPress={() => openInMaps('apple')}
+                  >
+                    <LinearGradient
+                      colors={['#475569', '#334155']}
+                      style={styles.mapButtonGradient}
+                    >
+                      <MaterialIcons name="map" size={20} color="#ffffff" />
+                      <Text style={styles.mapButtonText}>Open in Apple Maps</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </BlurView>
+          </View>
+
           {/* AI Generated Story */}
           {(details?.aiGeneratedStory || aiStory) && (
             <BlurView intensity={20} tint="dark" style={styles.storyContainer}>
@@ -542,7 +668,7 @@ return (
 };
 
 const styles = StyleSheet.create({
-container: {
+  container: {
     flex: 1,
     backgroundColor: '#000',
   },
@@ -614,6 +740,56 @@ container: {
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  mapContainer: {
+    height: MAP_HEIGHT,
+    margin: 16,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  distanceText: {
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  mapButtons: {
+    gap: 8,
+  },
+  mapButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  mapButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  mapButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   storyContainer: {
     margin: 16,
