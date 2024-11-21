@@ -23,6 +23,7 @@ import { getNearbyLocations } from '../services/supabase';
 import { getUserPointsAndLevel, getUserAchievements, POINT_VALUES } from '../services/points';
 import { supabase } from '../services/supabase';
 import env from '../config/env';
+import { debounce } from 'lodash';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEADER_HEIGHT = Platform.OS === 'ios' ? 94 : 70;
@@ -152,6 +153,8 @@ const ExploreScreen = ({ navigation, route }) => {
   const [recentAchievement, setRecentAchievement] = useState(null);
   const [customLocation, setCustomLocation] = useState('');
   const [currentCoords, setCurrentCoords] = useState(null);
+  const [predictions, setPredictions] = useState([]);
+  const [showPredictions, setShowPredictions] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
   const achievementAnim = useRef(new Animated.Value(0)).current;
 
@@ -162,7 +165,7 @@ const ExploreScreen = ({ navigation, route }) => {
     { id: 'stories', label: 'Stories', icon: 'history-edu' },
   ];
 
-useEffect(() => {
+  useEffect(() => {
     checkLocationPermission();
     loadUserData();
   }, []);
@@ -181,11 +184,12 @@ useEffect(() => {
     }
   }, [route.params?.refresh]);
 
+  // Remove the useEffect that depends on selectedFilter
   useEffect(() => {
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
       fetchNearbyLocations(permissionStatus === 'denied');
     }
-  }, [permissionStatus, selectedFilter]);
+  }, [permissionStatus]); // Remove selectedFilter from dependencies
 
   const loadUserData = async () => {
     try {
@@ -238,6 +242,61 @@ useEffect(() => {
     }
   };
 
+  const fetchPlacePredictions = useCallback(
+    debounce(async (input) => {
+      if (!input.trim()) {
+        setPredictions([]);
+        setShowPredictions(false);
+        return;
+      }
+
+      try {
+        // Use geocoding API to get predictions
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+            input
+          )}&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
+        );
+        const data = await response.json();
+        
+        if (data.results) {
+          // Transform geocoding results into prediction-like format
+          const predictions = data.results.map(result => ({
+            place_id: result.place_id,
+            description: result.formatted_address,
+            structured_formatting: {
+              main_text: result.address_components[0].long_name,
+              secondary_text: result.formatted_address.split(',').slice(1).join(',').trim()
+            },
+            geometry: result.geometry
+          }));
+          setPredictions(predictions);
+          setShowPredictions(true);
+        }
+      } catch (err) {
+        console.error('Error fetching predictions:', err);
+      }
+    }, 300),
+    []
+  );
+
+  const handleLocationSelect = async (prediction) => {
+    try {
+      setLoading(true);
+      setShowPredictions(false);
+      setCustomLocation(prediction.description);
+
+      const { lat, lng } = prediction.geometry.location;
+      setCurrentCoords({ latitude: lat, longitude: lng });
+      fetchNearbyLocations(false, { latitude: lat, longitude: lng });
+    } catch (err) {
+      console.error('Error selecting location:', err);
+      Alert.alert('Error', 'Failed to get location details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const searchLocation = async () => {
     if (!customLocation.trim()) {
       Alert.alert('Error', 'Please enter a location');
@@ -266,41 +325,41 @@ useEffect(() => {
     }
   };
 
-  const fetchNearbyLocations = async (skipLocation = false, customCoords = null) => {
-    setLoading(true);
-    try {
-      let locationData = null;
-      if (!skipLocation) {
-        if (customCoords) {
-          locationData = { coords: customCoords };
-        } else {
-          locationData = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          setCurrentCoords(locationData.coords);
-        }
+const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
+  setLoading(true);
+  try {
+    let locationData = null;
+    if (!skipLocation) {
+      if (customCoords) {
+        locationData = { coords: customCoords };
+      } else {
+        locationData = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setCurrentCoords(locationData.coords);
       }
-
-      const result = await getNearbyLocations(
-        locationData?.coords.latitude,
-        locationData?.coords.longitude,
-        selectedFilter,
-        5000
-      );
-
-      if (result?.locations) {
-        setLocations(result.locations);
-        setError(null);
-      }
-    } catch (err) {
-      console.error('Error fetching locations:', err);
-      setError('Failed to fetch locations');
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const handleLocationPress = useCallback((location) => {
+    const result = await getNearbyLocations(
+      locationData?.coords.latitude,
+      locationData?.coords.longitude,
+      filterOverride || selectedFilter,
+      5000
+    );
+
+    if (result?.locations) {
+      setLocations(result.locations);
+      setError(null);
+    }
+  } catch (err) {
+    console.error('Error fetching locations:', err);
+    setError('Failed to fetch locations');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleLocationPress = useCallback((location) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate('LocationDetail', { location });
   }, [navigation]);
@@ -381,22 +440,49 @@ useEffect(() => {
             </View>
           </BlurView>
 
-          <BlurView intensity={30} tint="dark" style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Enter city or address..."
-              placeholderTextColor="rgba(255, 255, 255, 0.6)"
-              value={customLocation}
-              onChangeText={setCustomLocation}
-              onSubmitEditing={searchLocation}
-            />
-            <TouchableOpacity 
-              style={styles.searchButton}
-              onPress={searchLocation}
-            >
-              <MaterialIcons name="search" size={24} color="#fff" />
-            </TouchableOpacity>
-          </BlurView>
+          <View style={styles.searchWrapper}>
+            <BlurView intensity={30} tint="dark" style={styles.searchContainer}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Enter city or address..."
+                placeholderTextColor="rgba(255, 255, 255, 0.6)"
+                value={customLocation}
+                onChangeText={(text) => {
+                  setCustomLocation(text);
+                  fetchPlacePredictions(text);
+                }}
+                onSubmitEditing={searchLocation}
+              />
+              <TouchableOpacity 
+                style={styles.searchButton}
+                onPress={searchLocation}
+              >
+                <MaterialIcons name="search" size={24} color="#fff" />
+              </TouchableOpacity>
+            </BlurView>
+
+            {showPredictions && predictions.length > 0 && (
+              <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
+                {predictions.map((prediction) => (
+                  <TouchableOpacity
+                    key={prediction.place_id}
+                    style={styles.predictionItem}
+                    onPress={() => handleLocationSelect(prediction)}
+                  >
+                    <MaterialIcons name="place" size={20} color="rgba(255, 255, 255, 0.6)" />
+                    <View style={styles.predictionTextContainer}>
+                      <Text style={styles.predictionMainText}>
+                        {prediction.structured_formatting.main_text}
+                      </Text>
+                      <Text style={styles.predictionSecondaryText}>
+                        {prediction.structured_formatting.secondary_text}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </BlurView>
+            )}
+          </View>
         </View>
 
         <View style={styles.filterContainer}>
@@ -408,11 +494,18 @@ useEffect(() => {
                 selectedFilter === filter.id && styles.filterButtonActive,
               ]}
               onPress={() => {
-                setSelectedFilter(filter.id);
+                const newFilter = filter.id;
+                setSelectedFilter(newFilter);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                fetchNearbyLocations(filter.id === 'all', currentCoords);
+                // Pass both the new filter and current coordinates when changing filters
+                if (currentCoords) {
+                  fetchNearbyLocations(false, currentCoords, newFilter);
+                } else {
+                  fetchNearbyLocations(newFilter === 'all', null, newFilter);
+                }
               }}
-            >
+
+>
               <MaterialIcons
                 name={filter.icon}
                 size={20}
@@ -535,11 +628,62 @@ container: {
     fontSize: 12,
     opacity: 0.8,
   },
+  searchWrapper: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    marginRight: 12,
+  },
+  searchButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  predictionsContainer: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    maxHeight: 200,
+  },
+  predictionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  predictionText: {
+    color: '#fff',
+    fontSize: 14,
+    flex: 1,
+  },
   filterContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 20,
     padding: 4,
+    marginTop: 16,
   },
   filterButton: {
     flex: 1,
@@ -777,7 +921,20 @@ container: {
     fontWeight: '600',
     marginLeft: 'auto',
   },
-    searchContainer: {
+  predictionTextContainer: {
+    flex: 1,
+  },
+  predictionMainText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  predictionSecondaryText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 16,
@@ -798,6 +955,7 @@ container: {
     borderRadius: 12,
     backgroundColor: 'rgba(59, 130, 246, 0.3)',
   },
+
 });
 
 export default ExploreScreen;
