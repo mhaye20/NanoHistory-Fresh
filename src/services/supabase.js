@@ -249,12 +249,9 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       latitude, 
       longitude, 
       filter, 
-      radius, 
-      page, 
-      limit 
+      radius
     });
 
-    const offset = (page - 1) * limit;
     let query;
 
     if (filter === 'stories') {
@@ -267,7 +264,7 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
           ai_generated_stories (
             content
           )
-        `, { count: 'exact' })
+        `)
         .order('updated_at', { ascending: false });
     } else {
       // For other filters, use the base query
@@ -279,16 +276,13 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
           ai_generated_stories (
             content
           )
-        `, { count: 'exact' });
+        `);
 
       // Apply filter-specific modifications
       if (filter === 'popular') {
         query = query.order('visit_count', { ascending: false });
       }
     }
-
-    // Apply pagination
-    query = query.range(offset, offset + limit - 1);
 
     // Execute query
     let result = await query;
@@ -368,13 +362,12 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
 
     logDebug('Locations', 'Nearby locations fetched', {
       found: sortedLocations.length,
-      total: result.count,
-      hasMore: offset + limit < result.count
+      total: result.count
     });
 
     return {
       locations: sortedLocations,
-      hasMore: offset + limit < result.count
+      hasMore: false
     };
 
   } catch (error) {

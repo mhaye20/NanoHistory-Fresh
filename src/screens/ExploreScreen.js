@@ -10,6 +10,8 @@ import {
   Platform,
   ActivityIndicator,
   Dimensions,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -20,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { getNearbyLocations } from '../services/supabase';
 import { getUserPointsAndLevel, getUserAchievements, POINT_VALUES } from '../services/points';
 import { supabase } from '../services/supabase';
+import env from '../config/env';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEADER_HEIGHT = Platform.OS === 'ios' ? 94 : 70;
@@ -147,6 +150,8 @@ const ExploreScreen = ({ navigation, route }) => {
   const [userLevel, setUserLevel] = useState(null);
   const [achievements, setAchievements] = useState([]);
   const [recentAchievement, setRecentAchievement] = useState(null);
+  const [customLocation, setCustomLocation] = useState('');
+  const [currentCoords, setCurrentCoords] = useState(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const achievementAnim = useRef(new Animated.Value(0)).current;
 
@@ -157,7 +162,7 @@ const ExploreScreen = ({ navigation, route }) => {
     { id: 'stories', label: 'Stories', icon: 'history-edu' },
   ];
 
-  useEffect(() => {
+useEffect(() => {
     checkLocationPermission();
     loadUserData();
   }, []);
@@ -233,14 +238,47 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
-  const fetchNearbyLocations = async (skipLocation = false) => {
+  const searchLocation = async () => {
+    if (!customLocation.trim()) {
+      Alert.alert('Error', 'Please enter a location');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(customLocation)}&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0) {
+        const { lat, lng } = data.results[0].geometry.location;
+        setCurrentCoords({ latitude: lat, longitude: lng });
+        fetchNearbyLocations(false, { latitude: lat, longitude: lng });
+      } else {
+        Alert.alert('Error', 'Location not found');
+      }
+    } catch (err) {
+      console.error('Error searching location:', err);
+      Alert.alert('Error', 'Failed to search location');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchNearbyLocations = async (skipLocation = false, customCoords = null) => {
     setLoading(true);
     try {
       let locationData = null;
       if (!skipLocation) {
-        locationData = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        if (customCoords) {
+          locationData = { coords: customCoords };
+        } else {
+          locationData = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setCurrentCoords(locationData.coords);
+        }
       }
 
       const result = await getNearbyLocations(
@@ -342,6 +380,23 @@ const ExploreScreen = ({ navigation, route }) => {
               <Text style={styles.pointsLabel}>POINTS</Text>
             </View>
           </BlurView>
+
+          <BlurView intensity={30} tint="dark" style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Enter city or address..."
+              placeholderTextColor="rgba(255, 255, 255, 0.6)"
+              value={customLocation}
+              onChangeText={setCustomLocation}
+              onSubmitEditing={searchLocation}
+            />
+            <TouchableOpacity 
+              style={styles.searchButton}
+              onPress={searchLocation}
+            >
+              <MaterialIcons name="search" size={24} color="#fff" />
+            </TouchableOpacity>
+          </BlurView>
         </View>
 
         <View style={styles.filterContainer}>
@@ -355,6 +410,7 @@ const ExploreScreen = ({ navigation, route }) => {
               onPress={() => {
                 setSelectedFilter(filter.id);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                fetchNearbyLocations(filter.id === 'all', currentCoords);
               }}
             >
               <MaterialIcons
@@ -426,7 +482,7 @@ const ExploreScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     flex: 1,
     backgroundColor: '#000',
   },
@@ -720,6 +776,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 'auto',
+  },
+    searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    marginRight: 12,
+  },
+  searchButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
   },
 });
 
