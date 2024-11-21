@@ -8,11 +8,8 @@ import {
   Animated,
   Image,
   Platform,
-  Linking,
-  Alert,
   ActivityIndicator,
   Dimensions,
-  useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -21,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getNearbyLocations } from '../services/supabase';
-import { getUserPointsAndLevel, getUserAchievements } from '../services/points';
+import { getUserPointsAndLevel, getUserAchievements, POINT_VALUES } from '../services/points';
 import { supabase } from '../services/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -69,71 +66,37 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
         />
         
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)', 'rgba(0,0,0,0.9)']}
+          colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
           style={styles.gradient}
         >
           <View style={styles.cardContent}>
             <View style={styles.cardHeader}>
-              <View style={styles.titleContainer}>
-                <Text style={styles.locationTitle}>{location.title}</Text>
-                {location.hasStories && (
-                  <BlurView intensity={30} tint="dark" style={styles.storiesIndicator}>
-                    <MaterialIcons name="history-edu" size={16} color="#10b981" />
-                    <Text style={styles.storiesText}>Stories</Text>
-                  </BlurView>
-                )}
-              </View>
-              <BlurView intensity={30} tint="dark" style={styles.ratingContainer}>
-                <MaterialIcons name="star" size={16} color="#fbbf24" />
-                <Text style={styles.ratingText}>
-                  {location.rating ? location.rating.toFixed(1) : '4.5'}
-                </Text>
-              </BlurView>
-            </View>
-
-            <View style={styles.perksContainer}>
-              <BlurView intensity={20} tint="dark" style={styles.perkBadge}>
-                <MaterialIcons name="place" size={16} color="#fbbf24" />
-                <Text style={styles.perkText}>+100 First Visit</Text>
-              </BlurView>
-              <BlurView intensity={20} tint="dark" style={styles.perkBadge}>
-                <MaterialIcons name="camera-alt" size={16} color="#fbbf24" />
-                <Text style={styles.perkText}>+200 AR Photo</Text>
-              </BlurView>
-              <BlurView intensity={20} tint="dark" style={styles.perkBadge}>
-                <MaterialIcons name="history-edu" size={16} color="#fbbf24" />
-                <Text style={styles.perkText}>+300 Story Share</Text>
-              </BlurView>
+              <Text style={styles.locationTitle}>{location.title}</Text>
+              {location.period && (
+                <BlurView intensity={30} tint="dark" style={styles.periodBadge}>
+                  <MaterialIcons name="history" size={16} color="#fff" />
+                  <Text style={styles.periodText}>{location.period}</Text>
+                </BlurView>
+              )}
             </View>
 
             <Text style={styles.locationDescription} numberOfLines={3}>
               {location.description}
             </Text>
 
-            {location.aiGeneratedStory && location.aiGeneratedStory.facts && (
-              <View style={styles.factsContainer}>
-                <BlurView intensity={20} tint="dark" style={styles.factItem}>
-                  <MaterialIcons name="lightbulb" size={16} color="#3b82f6" />
-                  <Text style={styles.factText}>
-                    {location.aiGeneratedStory.facts[0]}
-                  </Text>
-                </BlurView>
-              </View>
-            )}
-
             <View style={styles.cardFooter}>
               <View style={styles.locationInfo}>
-                <BlurView intensity={20} tint="dark" style={styles.distanceContainer}>
+                <BlurView intensity={30} tint="dark" style={styles.distanceBadge}>
                   <MaterialIcons name="place" size={16} color="#fff" />
                   <Text style={styles.distanceText}>
                     {location.distance ? `${(location.distance / 1000).toFixed(1)} km` : '2.5 km'}
                   </Text>
                 </BlurView>
 
-                {location.period && (
-                  <BlurView intensity={20} tint="dark" style={styles.periodContainer}>
-                    <MaterialIcons name="history" size={16} color="#fff" />
-                    <Text style={styles.periodText}>{location.period}</Text>
+                {location.hasStories && (
+                  <BlurView intensity={30} tint="dark" style={styles.storiesBadge}>
+                    <MaterialIcons name="history-edu" size={16} color="#10b981" />
+                    <Text style={styles.storiesText}>Stories Available</Text>
                   </BlurView>
                 )}
               </View>
@@ -149,6 +112,7 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
                       style={styles.actionButton}
                     >
                       <MaterialIcons name="view-in-ar" size={20} color="#fff" />
+                      <Text style={styles.pointsText}>+{POINT_VALUES.AR_PHOTO}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 )}
@@ -198,19 +162,16 @@ const ExploreScreen = ({ navigation, route }) => {
     loadUserData();
   }, []);
 
-  // Add effect to refresh points when screen is focused
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadUserData();
     });
-
     return unsubscribe;
   }, [navigation]);
 
   useEffect(() => {
     if (route.params?.refresh) {
       loadUserData();
-      // Reset the refresh param
       navigation.setParams({ refresh: undefined });
     }
   }, [route.params?.refresh]);
@@ -225,18 +186,13 @@ const ExploreScreen = ({ navigation, route }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        console.log('Loading user data for:', user.id); // Debug log
         const pointsData = await getUserPointsAndLevel(user.id);
         const achievementsData = await getUserAchievements(user.id);
         
-        console.log('Points data:', pointsData); // Debug log
-        console.log('Achievements:', achievementsData); // Debug log
-
         setUserPoints(pointsData.points);
         setUserLevel(pointsData);
         setAchievements(achievementsData);
 
-        // Check for most recent achievement
         const recent = achievementsData[achievementsData.length - 1];
         if (recent && new Date(recent.earned_at) > new Date(Date.now() - 5000)) {
           setRecentAchievement(recent);
@@ -373,35 +329,18 @@ const ExploreScreen = ({ navigation, route }) => {
 
       <BlurView intensity={80} tint="dark" style={styles.header}>
         <View style={styles.headerTop}>
-          <BlurView intensity={30} tint="dark" style={styles.pointsBanner}>
-            <View style={styles.levelBadge}>
-              <MaterialIcons name="military-tech" size={20} color="#fbbf24" />
-              <Text style={styles.levelText}>Level {userLevel?.level}</Text>
-            </View>
-            <View style={styles.pointsInfo}>
-              <Text style={styles.pointsTitle}>{userLevel?.title}</Text>
-              <View style={styles.pointsProgress}>
-                <Text style={styles.pointsText}>{userPoints} points</Text>
-                <Text style={styles.nextLevelText}>
-                  {userLevel?.nextLevel ? 
-                    `${userLevel.nextLevel.minPoints - userPoints} points to Level ${userLevel.nextLevel.level}` :
-                    'Max Level Achieved!'
-                  }
-                </Text>
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
-                </View>
+          <BlurView intensity={30} tint="dark" style={styles.levelBanner}>
+            <View style={styles.levelInfo}>
+              <MaterialIcons name="military-tech" size={24} color="#fbbf24" />
+              <View>
+                <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
+                <Text style={styles.levelSubtitle}>{userLevel?.title}</Text>
               </View>
             </View>
-            <TouchableOpacity 
-              style={styles.achievementsButton}
-              onPress={() => {
-                // Show achievements modal/screen
-              }}
-            >
-              <MaterialIcons name="emoji-events" size={24} color="#fbbf24" />
-              <Text style={styles.achievementsCount}>{achievements.length}</Text>
-            </TouchableOpacity>
+            <View style={styles.pointsContainer}>
+              <Text style={styles.pointsValue}>{userPoints}</Text>
+              <Text style={styles.pointsLabel}>POINTS</Text>
+            </View>
           </BlurView>
         </View>
 
@@ -468,22 +407,20 @@ const ExploreScreen = ({ navigation, route }) => {
         }
       />
 
-      <View style={styles.fabContainer}>
-        <TouchableOpacity
-          style={[styles.fab, styles.createFab]}
-          onPress={() => {
-            navigation.navigate('CreateStory');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => {
+          navigation.navigate('CreateStory');
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }}
+      >
+        <LinearGradient
+          colors={['#10b981', '#059669']}
+          style={styles.fabGradient}
         >
-          <LinearGradient
-            colors={['#10b981', '#059669']}
-            style={styles.fabGradient}
-          >
-            <MaterialIcons name="add" size={24} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+          <MaterialIcons name="add" size={24} color="#fff" />
+        </LinearGradient>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -504,102 +441,43 @@ const styles = StyleSheet.create({
   headerTop: {
     marginBottom: 16,
   },
-  pointsBanner: {
+  levelBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
   },
-  levelBadge: {
+  levelInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-  },
-  levelText: {
-    color: '#fbbf24',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pointsInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  pointsTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  pointsProgress: {
-    gap: 4,
-  },
-  pointsText: {
-    color: '#fbbf24',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  nextLevelText: {
-    color: 'rgba(251, 191, 36, 0.8)',
-    fontSize: 12,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#fbbf24',
-    borderRadius: 2,
-  },
-  achievementsButton: {
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-  achievementsCount: {
-    color: '#fbbf24',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  achievementPopup: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    right: 20,
-    zIndex: 1000,
-  },
-  achievementContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 20,
     gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
-  achievementTitle: {
+  levelTitle: {
     color: '#fbbf24',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
   },
-  achievementDesc: {
-    color: '#e2e8f0',
+  levelSubtitle: {
+    color: '#fff',
     fontSize: 14,
+    opacity: 0.8,
   },
-  achievementPoints: {
+  pointsContainer: {
+    alignItems: 'center',
+  },
+  pointsValue: {
     color: '#fbbf24',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 'auto',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  pointsLabel: {
+    color: '#fff',
+    fontSize: 12,
+    opacity: 0.8,
   },
   filterContainer: {
     flexDirection: 'row',
@@ -615,6 +493,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 16,
+    gap: 6,
   },
   filterButtonActive: {
     backgroundColor: 'rgba(59, 130, 246, 0.3)',
@@ -622,7 +501,6 @@ const styles = StyleSheet.create({
   filterText: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 14,
-    marginLeft: 4,
     fontWeight: '500',
   },
   filterTextActive: {
@@ -663,14 +541,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 12,
-  },
-  titleContainer: {
-    flex: 1,
-    marginRight: 12,
   },
   locationTitle: {
     fontSize: 24,
@@ -678,77 +549,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 8,
   },
-  storiesIndicator: {
+  periodBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    gap: 4,
-  },
-  storiesText: {
-    color: '#10b981',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  perksContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  perkBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
     gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
-  perkText: {
-    color: '#fbbf24',
+  periodText: {
+    color: '#fff',
     fontSize: 14,
     fontWeight: '500',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-  },
-  ratingText: {
-    color: '#fbbf24',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 4,
   },
   locationDescription: {
     fontSize: 16,
     color: '#e2e8f0',
     marginBottom: 16,
     lineHeight: 24,
-  },
-  factsContainer: {
-    marginBottom: 16,
-  },
-  factItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    gap: 8,
-  },
-  factText: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 14,
-    lineHeight: 20,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -758,31 +577,29 @@ const styles = StyleSheet.create({
   locationInfo: {
     gap: 8,
   },
-  distanceContainer: {
+  distanceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 4,
+    gap: 6,
   },
   distanceText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '500',
   },
-  periodContainer: {
+  storiesBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 4,
+    gap: 6,
   },
-  periodText: {
-    color: '#fff',
+  storiesText: {
+    color: '#10b981',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -791,18 +608,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 8,
   },
-  fabContainer: {
+  pointsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fab: {
     position: 'absolute',
     right: 20,
     bottom: Platform.OS === 'ios' ? 40 : 20,
-  },
-  fab: {
     borderRadius: 28,
     overflow: 'hidden',
     elevation: 8,
@@ -868,6 +689,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     paddingHorizontal: 32,
+  },
+  achievementPopup: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+  },
+  achievementContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 20,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  achievementTitle: {
+    color: '#fbbf24',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  achievementDesc: {
+    color: '#e2e8f0',
+    fontSize: 14,
+  },
+  achievementPoints: {
+    color: '#fbbf24',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 'auto',
   },
 });
 
