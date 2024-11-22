@@ -12,6 +12,7 @@ import {
   Dimensions,
   TextInput,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -146,6 +147,7 @@ const ExploreScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [permissionStatus, setPermissionStatus] = useState(null);
   const [userPoints, setUserPoints] = useState(0);
   const [userLevel, setUserLevel] = useState(null);
@@ -163,6 +165,15 @@ const ExploreScreen = ({ navigation, route }) => {
     { id: 'nearby', label: 'Nearby', icon: 'near-me' },
     { id: 'popular', label: 'Popular', icon: 'trending-up' },
     { id: 'stories', label: 'Stories', icon: 'history-edu' },
+  ];
+
+  const periods = [
+    { id: 'all', label: 'All Periods', icon: 'timeline' },
+    { id: 'ancient', label: 'Ancient', icon: 'account-balance' },
+    { id: 'medieval', label: 'Medieval', icon: 'castle' },
+    { id: 'renaissance', label: 'Renaissance', icon: 'palette' },
+    { id: 'modern', label: 'Modern', icon: 'apartment' },
+    { id: 'contemporary', label: 'Contemporary', icon: 'business' },
   ];
 
   useEffect(() => {
@@ -184,12 +195,11 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   }, [route.params?.refresh]);
 
-  // Remove the useEffect that depends on selectedFilter
   useEffect(() => {
     if (permissionStatus === 'granted' || permissionStatus === 'denied') {
       fetchNearbyLocations(permissionStatus === 'denied');
     }
-  }, [permissionStatus]); // Remove selectedFilter from dependencies
+  }, [permissionStatus, selectedPeriod]);
 
   const loadUserData = async () => {
     try {
@@ -251,7 +261,6 @@ const ExploreScreen = ({ navigation, route }) => {
       }
 
       try {
-        // Use geocoding API to get predictions
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
             input
@@ -260,7 +269,6 @@ const ExploreScreen = ({ navigation, route }) => {
         const data = await response.json();
         
         if (data.results) {
-          // Transform geocoding results into prediction-like format
           const predictions = data.results.map(result => ({
             place_id: result.place_id,
             description: result.formatted_address,
@@ -325,44 +333,50 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
-const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
-  setLoading(true);
-  try {
-    let locationData = null;
-    if (!skipLocation) {
-      if (customCoords) {
-        locationData = { coords: customCoords };
-      } else {
-        locationData = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setCurrentCoords(locationData.coords);
+  const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
+    setLoading(true);
+    try {
+      let locationData = null;
+      if (!skipLocation) {
+        if (customCoords) {
+          locationData = { coords: customCoords };
+        } else {
+          locationData = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setCurrentCoords(locationData.coords);
+        }
       }
+
+      const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
+
+      const result = await getNearbyLocations(
+        locationData?.coords.latitude,
+        locationData?.coords.longitude,
+        filterOverride || selectedFilter,
+        searchRadius
+      );
+
+      if (result?.locations) {
+        // Filter locations by period if a specific period is selected
+        const filteredLocations = selectedPeriod === 'all' 
+          ? result.locations 
+          : result.locations.filter(loc => 
+              loc.period?.toLowerCase().includes(selectedPeriod.toLowerCase())
+            );
+        
+        setLocations(filteredLocations);
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Error fetching locations:', err);
+      setError('Failed to fetch locations');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Use a larger radius for non-nearby filters
-    const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
-
-    const result = await getNearbyLocations(
-      locationData?.coords.latitude,
-      locationData?.coords.longitude,
-      filterOverride || selectedFilter,
-      searchRadius
-    );
-
-    if (result?.locations) {
-      setLocations(result.locations);
-      setError(null);
-    }
-  } catch (err) {
-    console.error('Error fetching locations:', err);
-    setError('Failed to fetch locations');
-  } finally {
-    setLoading(false);
-  }
-};
-
-const handleLocationPress = useCallback((location) => {
+  const handleLocationPress = useCallback((location) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate('LocationDetail', { location });
   }, [navigation]);
@@ -500,15 +514,13 @@ const handleLocationPress = useCallback((location) => {
                 const newFilter = filter.id;
                 setSelectedFilter(newFilter);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                // Pass both the new filter and current coordinates when changing filters
                 if (currentCoords) {
                   fetchNearbyLocations(false, currentCoords, newFilter);
                 } else {
                   fetchNearbyLocations(newFilter === 'all', null, newFilter);
                 }
               }}
-
->
+            >
               <MaterialIcons
                 name={filter.icon}
                 size={20}
@@ -525,6 +537,40 @@ const handleLocationPress = useCallback((location) => {
             </TouchableOpacity>
           ))}
         </View>
+
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.periodFilterContainer}
+        >
+          {periods.map((period) => (
+            <TouchableOpacity
+              key={period.id}
+              style={[
+                styles.periodButton,
+                selectedPeriod === period.id && styles.periodButtonActive,
+              ]}
+              onPress={() => {
+                setSelectedPeriod(period.id);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            >
+              <MaterialIcons
+                name={period.icon}
+                size={20}
+                color={selectedPeriod === period.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+              />
+              <Text
+                style={[
+                  styles.periodText,
+                  selectedPeriod === period.id && styles.periodTextActive,
+                ]}
+              >
+                {period.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </BlurView>
 
       <Animated.FlatList
@@ -558,27 +604,12 @@ const handleLocationPress = useCallback((location) => {
           </View>
         }
       />
-
-      {/* <TouchableOpacity
-        style={styles.fab}
-        onPress={() => {
-          navigation.navigate('CreateStory');
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        }}
-      >
-        <LinearGradient
-          colors={['#10b981', '#059669']}
-          style={styles.fabGradient}
-        >
-          <MaterialIcons name="add" size={24} color="#fff" />
-        </LinearGradient>
-      </TouchableOpacity> */}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-container: {
+  container: {
     flex: 1,
     backgroundColor: '#000',
   },
@@ -710,6 +741,31 @@ container: {
     color: '#fff',
     fontWeight: '600',
   },
+  periodFilterContainer: {
+    marginTop: 12,
+  },
+  periodButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginRight: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 8,
+  },
+  periodButtonActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  periodText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  periodTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
   listContent: {
     paddingVertical: 24,
     paddingHorizontal: SPACING,
@@ -822,24 +878,6 @@ container: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: Platform.OS === 'ios' ? 40 : 20,
-    borderRadius: 28,
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  fabGradient: {
-    width: 56,
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   centerContainer: {
     flex: 1,
