@@ -70,6 +70,11 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
           resizeMode="cover"
         />
         
+        {/* Top Label Overlay */}
+        <BlurView intensity={50} tint="dark" style={styles.topLabelOverlay}>
+          <Text style={styles.topLabelText}>{location.period}</Text>
+        </BlurView>
+
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
           style={styles.gradient}
@@ -77,12 +82,6 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
           <View style={styles.cardContent}>
             <View style={styles.cardHeader}>
               <Text style={styles.locationTitle}>{location.title}</Text>
-              {location.period && (
-                <BlurView intensity={30} tint="dark" style={styles.periodBadge}>
-                  <MaterialIcons name="history" size={16} color="#fff" />
-                  <Text style={styles.periodText}>{location.period}</Text>
-                </BlurView>
-              )}
             </View>
 
             <Text style={styles.locationDescription} numberOfLines={3}>
@@ -121,18 +120,6 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
                     </LinearGradient>
                   </TouchableOpacity>
                 )}
-
-                <TouchableOpacity
-                  style={styles.detailsButton}
-                  onPress={onPress}
-                >
-                  <LinearGradient
-                    colors={['#3b82f6', '#2563eb']}
-                    style={styles.actionButton}
-                  >
-                    <MaterialIcons name="arrow-forward" size={20} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -728,90 +715,76 @@ const ExploreScreen = ({ navigation, route }) => {
         </View>
 
         <View style={styles.filterButtons}>
-          {filterButtons.map((filter) => {
-            const selectedValue = getSelectedValue(filter.id);
-            const options = getFilterOptions(filter.id);
-            const selectedOption = options.find(opt => opt.id === selectedValue);
-            
-            return (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.filterButton,
-                  activeFilter === filter.id && styles.filterButtonActive,
-                ]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setActiveFilter(filter.id);
-                }}
+          {filterButtons.map((filter) => (
+            <TouchableOpacity
+              key={filter.id}
+              style={[
+                styles.filterButton,
+                activeFilter === filter.id && styles.filterButtonActive,
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setActiveFilter(filter.id);
+              }}
+            >
+              <LinearGradient
+                colors={activeFilter === filter.id ? 
+                  ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
+                  ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.filterButtonGradient}
               >
-                <LinearGradient
-                  colors={activeFilter === filter.id ? 
-                    ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
-                    ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.filterButtonGradient}
-                >
-                  <MaterialIcons
-                    name={filter.icon}
-                    size={20}
-                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
-                    style={styles.filterIcon}
-                  />
-                  <View style={styles.filterButtonContent}>
-                    <Text style={styles.filterButtonLabel}>{filter.label}</Text>
-                    <Text 
-                      style={[
-                        styles.filterButtonValue,
-                        selectedOption && styles.filterButtonValueActive,
-                      ]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      {selectedOption ? selectedOption.label : 'All'}
-                    </Text>
-                  </View>
-                  <MaterialIcons
-                    name="keyboard-arrow-down"
-                    size={20}
-                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.4)'}
-                    style={styles.filterArrow}
-                  />
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
+                <MaterialIcons
+                  name={filter.icon}
+                  size={20}
+                  color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                />
+                <Text style={[
+                  styles.filterButtonLabel,
+                  activeFilter === filter.id && styles.filterButtonLabelActive
+                ]}>
+                  {filter.label}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ))}
         </View>
+
+        {getActiveFilters().length > 0 && (
+          <BlurView intensity={30} tint="dark" style={styles.activeFiltersContainer}>
+            {getActiveFilters().map((filter, index) => (
+              <Text key={index} style={styles.activeFilterText}>
+                {filter}
+                {index < getActiveFilters().length - 1 ? ' • ' : ''}
+              </Text>
+            ))}
+          </BlurView>
+        )}
       </BlurView>
 
-     
-
-        <Animated.FlatList
-          data={locations}
-          renderItem={({ item, index }) => (
-            <LocationCard
-              location={item}
-              onPress={() => handleLocationPress(item)}
-              onARPress={() => handleARPress(item)}
-              index={index}
-              scrollX={scrollX}
-            />
-          )}
-          keyExtractor={(item) => item.id.toString()}
-          horizontal
-          pagingEnabled
-          snapToInterval={CARD_WIDTH + SPACING * 2}
-          decelerationRate="fast"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.listContent,
-            getActiveFilters().length > 0 && { paddingTop: 60 }
-          ]}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: true }
-          )}
+      <Animated.FlatList
+        data={locations}
+        renderItem={({ item, index }) => (
+          <LocationCard
+            location={item}
+            onPress={() => handleLocationPress(item)}
+            onARPress={() => handleARPress(item)}
+            index={index}
+            scrollX={scrollX}
+          />
+        )}
+        keyExtractor={(item) => item.id.toString()}
+        horizontal
+        pagingEnabled
+        snapToInterval={CARD_WIDTH + SPACING * 2}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: true }
+        )}
         scrollEventThrottle={16}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -822,7 +795,6 @@ const ExploreScreen = ({ navigation, route }) => {
         }
       />
 
-      {/* Filter Modals */}
       {filterButtons.map((filter) => (
         <FilterModal
           key={filter.id}
@@ -913,6 +885,9 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     marginTop: 2,
   },
+  searchWrapper: {
+    marginTop: 16,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -921,11 +896,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
   },
   searchInput: {
     flex: 1,
@@ -933,167 +903,82 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 12,
     marginRight: 8,
-    fontWeight: '500',
   },
   clearButton: {
-    padding: 8,
-    marginRight: -8,
-    borderRadius: 12,
+    padding: 4,
+  },
+  predictionsContainer: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    zIndex: 1000,
+  },
+  predictionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  predictionTextContainer: {
+    flex: 1,
+  },
+  predictionMainText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  predictionSecondaryText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 2,
   },
   filterButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     marginTop: 16,
     gap: 8,
   },
   filterButton: {
     flex: 1,
-    minWidth: (SCREEN_WIDTH - 64) / 3,
     borderRadius: 20,
     overflow: 'hidden',
   },
   filterButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 20,
-  },
-  filterButtonActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderColor: '#3b82f6',
-  },
-  filterIcon: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-  },
-  filterButtonContent: {
-    flex: 1,
-    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
   },
   filterButtonLabel: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  filterButtonValue: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  filterButtonValueActive: {
-    color: '#3b82f6',
-  },
-  filterArrow: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: 'transparent',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: 'hidden',
-    maxHeight: SCREEN_HEIGHT * 0.7,
-  },
-  modalBlur: {
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  optionsContainer: {
-    gap: 8,
-  },
-  optionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 12,
-  },
-  optionButtonSelected: {
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  optionText: {
-    flex: 1,
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  optionTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  optionCheckmark: {
-    marginLeft: 'auto',
-  },
-  filterText: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 14,
     fontWeight: '500',
   },
-  filterTextActive: {
+  filterButtonLabelActive: {
     color: '#fff',
     fontWeight: '600',
   },
-  periodFilterContainer: {
+  activeFiltersContainer: {
     marginTop: 12,
-  },
-  periodButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 16,
-    marginRight: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
   },
-  periodButtonActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  periodText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  periodTextActive: {
+  activeFilterText: {
     color: '#fff',
-    fontWeight: '600',
-  },
-  listContent: {
-    paddingVertical: 24,
-    paddingHorizontal: SPACING,
-    minWidth: '100%',
+    fontSize: 13,
+    fontWeight: '500',
+    opacity: 0.8,
   },
   card: {
     width: CARD_WIDTH,
@@ -1116,7 +1001,46 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  gradient: {
+  topLabelOverlay: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  topLabelText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.9,
+  },
+  activeFiltersContainer: {
+    marginTop: 12,
+    marginHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  activeFilterText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    opacity: 0.9,
+    paddingHorizontal: 4,
+  },
+
+ gradient: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
   },
@@ -1131,20 +1055,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     marginBottom: 8,
-  },
-  periodBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    gap: 6,
-  },
-  periodText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
   },
   locationDescription: {
     fontSize: 16,
@@ -1202,6 +1112,62 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    maxHeight: SCREEN_HEIGHT * 0.7,
+  },
+  modalBlur: {
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  optionButtonSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  optionText: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  optionTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  optionCheckmark: {
+    marginLeft: 'auto',
   },
   centerContainer: {
     flex: 1,
@@ -1286,68 +1252,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 'auto',
   },
-  predictionTextContainer: {
-    flex: 1,
-  },
-  predictionMainText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  predictionSecondaryText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  searchInput: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 16,
-    marginRight: 12,
-  },
-  searchButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  storyTypeFilterContainer: {
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  storyTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    marginRight: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  storyTypeButtonActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
-    borderColor: 'rgba(59, 130, 246, 0.5)',
-  },
-  storyTypeText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  storyTypeTextActive: {
-    color: '#fff',
-    fontWeight: '600',
+  listContent: {
+    paddingVertical: 24,
+    paddingHorizontal: SPACING,
   },
 });
 
