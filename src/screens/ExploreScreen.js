@@ -340,11 +340,14 @@ const fetchNearbyLocations = async (skipLocation = false, customCoords = null, f
       }
     }
 
+    // Use a larger radius for non-nearby filters
+    const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
+
     const result = await getNearbyLocations(
       locationData?.coords.latitude,
       locationData?.coords.longitude,
       filterOverride || selectedFilter,
-      5000
+      searchRadius
     );
 
     if (result?.locations) {
