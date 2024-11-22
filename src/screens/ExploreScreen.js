@@ -146,7 +146,7 @@ const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState(route.params?.source === 'swipe' ? 'nearby' : 'all');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [permissionStatus, setPermissionStatus] = useState(null);
   const [userPoints, setUserPoints] = useState(0);
@@ -159,6 +159,8 @@ const ExploreScreen = ({ navigation, route }) => {
   const [showPredictions, setShowPredictions] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
   const achievementAnim = useRef(new Animated.Value(0)).current;
+  const [selectedStoryType, setSelectedStoryType] = useState('all');
+  const [availableStoryTypes, setAvailableStoryTypes] = useState([]);
 
   const filters = [
     { id: 'all', label: 'All', icon: 'public' },
@@ -175,6 +177,23 @@ const ExploreScreen = ({ navigation, route }) => {
     { id: 'modern', label: 'Modern', icon: 'apartment' },
     { id: 'contemporary', label: 'Contemporary', icon: 'business' },
   ];
+
+  const storyTypeIcons = {
+    all: { label: 'All Stories', icon: 'auto-stories' },
+    music: { label: 'Music', icon: 'music-note' },
+    visualArt: { label: 'Visual Art', icon: 'palette' },
+    performingArt: { label: 'Performing Arts', icon: 'theater-comedy' },
+    architecture: { label: 'Architecture', icon: 'apartment' },
+    fashion: { label: 'Fashion', icon: 'style' },
+    culinary: { label: 'Culinary', icon: 'restaurant' },
+    landscape: { label: 'Landscape', icon: 'landscape' },
+    lore: { label: 'Lore', icon: 'auto-stories' },
+    paranormal: { label: 'Paranormal', icon: 'visibility' },
+    unsungHero: { label: 'Unsung Heroes', icon: 'person' },
+    popCulture: { label: 'Pop Culture', icon: 'movie' },
+    civilRights: { label: 'Civil Rights', icon: 'people' },
+    education: { label: 'Education', icon: 'school' }
+  };
 
   useEffect(() => {
     checkLocationPermission();
@@ -359,11 +378,29 @@ const ExploreScreen = ({ navigation, route }) => {
 
       if (result?.locations) {
         // Filter locations by period if a specific period is selected
-        const filteredLocations = selectedPeriod === 'all' 
+        let filteredLocations = selectedPeriod === 'all' 
           ? result.locations 
           : result.locations.filter(loc => 
               loc.period?.toLowerCase().includes(selectedPeriod.toLowerCase())
             );
+        
+        // Filter by story type if selected
+        if (selectedStoryType !== 'all') {
+          filteredLocations = filteredLocations.filter(loc => {
+            const content = typeof loc.content === 'string' ? 
+              JSON.parse(loc.content) : loc.content;
+            return content?.story_types?.includes(selectedStoryType);
+          });
+        }
+
+        // Get available story types from loaded locations
+        const types = new Set(['all']);
+        filteredLocations.forEach(loc => {
+          const content = typeof loc.content === 'string' ? 
+            JSON.parse(loc.content) : loc.content;
+          content?.story_types?.forEach(type => types.add(type));
+        });
+        setAvailableStoryTypes(Array.from(types));
         
         setLocations(filteredLocations);
         setError(null);
@@ -553,6 +590,7 @@ const ExploreScreen = ({ navigation, route }) => {
               onPress={() => {
                 setSelectedPeriod(period.id);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                fetchNearbyLocations(permissionStatus === 'denied');
               }}
             >
               <MaterialIcons
@@ -571,6 +609,46 @@ const ExploreScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.storyTypeFilterContainer}
+      >
+        {availableStoryTypes.map((typeId) => {
+          const type = storyTypeIcons[typeId];
+          if (!type) return null;
+          
+          return (
+            <TouchableOpacity
+              key={typeId}
+              style={[
+                styles.storyTypeButton,
+                selectedStoryType === typeId && styles.storyTypeButtonActive,
+              ]}
+              onPress={() => {
+                setSelectedStoryType(typeId);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                fetchNearbyLocations(permissionStatus === 'denied');
+              }}
+            >
+              <MaterialIcons
+                name={type.icon}
+                size={20}
+                color={selectedStoryType === typeId ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+              />
+              <Text
+                style={[
+                  styles.storyTypeText,
+                  selectedStoryType === typeId && styles.storyTypeTextActive,
+                ]}
+              >
+                {type.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
       </BlurView>
 
       <Animated.FlatList
@@ -996,7 +1074,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(59, 130, 246, 0.3)',
   },
-
+  storyTypeFilterContainer: {
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  storyTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginRight: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  storyTypeButtonActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: 'rgba(59, 130, 246, 0.5)',
+  },
+  storyTypeText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  storyTypeTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });
 
 export default ExploreScreen;

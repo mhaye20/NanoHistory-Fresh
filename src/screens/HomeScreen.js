@@ -62,10 +62,10 @@ const HomeScreen = ({ navigation }) => {
     ).start();
   }, []);
 
-  const handleNavigateToExplore = useCallback(() => {
+  const handleNavigateToExplore = useCallback((source) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      navigation.navigate('Explore');
+      navigation.navigate('Explore', { source });
     } catch (error) {
       console.error('Navigation error:', error);
     }
@@ -75,7 +75,7 @@ const HomeScreen = ({ navigation }) => {
     .runOnJS(true)
     .onEnd((event) => {
       if (event.velocityY < -1000 || event.translationY < -100) {
-        handleNavigateToExplore();
+        handleNavigateToExplore('swipe');
       }
     });
 
@@ -121,7 +121,7 @@ const HomeScreen = ({ navigation }) => {
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.mainButton}
-                onPress={handleNavigateToExplore}
+                onPress={() => handleNavigateToExplore('button')}
                 activeOpacity={0.8}
               >
                 <LinearGradient
