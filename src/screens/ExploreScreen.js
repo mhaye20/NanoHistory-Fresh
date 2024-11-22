@@ -12,7 +12,7 @@ import {
   Dimensions,
   TextInput,
   Alert,
-  ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -26,8 +26,8 @@ import { supabase } from '../services/supabase';
 import env from '../config/env';
 import { debounce } from 'lodash';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HEADER_HEIGHT = Platform.OS === 'ios' ? 94 : 70;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_HEIGHT = Platform.OS === 'ios' ? 70 : 50;
 const CARD_WIDTH = SCREEN_WIDTH * 0.85;
 const CARD_HEIGHT = 400;
 const SPACING = 12;
@@ -142,6 +142,99 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
   );
 };
 
+const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect }) => {
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 11,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <Animated.View
+          style={[
+            styles.modalContent,
+            {
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <BlurView intensity={80} tint="dark" style={styles.modalBlur}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+                <MaterialIcons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsContainer}>
+              {options.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.optionButton,
+                    selectedValue === option.id && styles.optionButtonSelected,
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onSelect(option.id);
+                    onClose();
+                  }}
+                >
+                  <MaterialIcons
+                    name={option.icon}
+                    size={24}
+                    color={selectedValue === option.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                  />
+                  <Text
+                    style={[
+                      styles.optionText,
+                      selectedValue === option.id && styles.optionTextSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {selectedValue === option.id && (
+                    <MaterialIcons
+                      name="check"
+                      size={24}
+                      color="#fff"
+                      style={styles.optionCheckmark}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </BlurView>
+        </Animated.View>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
 const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -161,6 +254,7 @@ const ExploreScreen = ({ navigation, route }) => {
   const achievementAnim = useRef(new Animated.Value(0)).current;
   const [selectedStoryType, setSelectedStoryType] = useState('all');
   const [availableStoryTypes, setAvailableStoryTypes] = useState([]);
+  const [activeFilter, setActiveFilter] = useState(null);
 
   const filters = [
     { id: 'all', label: 'All', icon: 'public' },
@@ -194,6 +288,12 @@ const ExploreScreen = ({ navigation, route }) => {
     civilRights: { label: 'Civil Rights', icon: 'people' },
     education: { label: 'Education', icon: 'school' }
   };
+
+  const filterButtons = [
+    { id: 'sort', label: 'Sort', icon: 'sort' },
+    { id: 'period', label: 'Period', icon: 'history' },
+    { id: 'type', label: 'Type', icon: 'category' },
+  ];
 
   useEffect(() => {
     checkLocationPermission();
@@ -377,14 +477,12 @@ const ExploreScreen = ({ navigation, route }) => {
       );
 
       if (result?.locations) {
-        // Filter locations by period if a specific period is selected
         let filteredLocations = selectedPeriod === 'all' 
           ? result.locations 
           : result.locations.filter(loc => 
               loc.period?.toLowerCase().includes(selectedPeriod.toLowerCase())
             );
         
-        // Filter by story type if selected
         if (selectedStoryType !== 'all') {
           filteredLocations = filteredLocations.filter(loc => {
             const content = typeof loc.content === 'string' ? 
@@ -393,7 +491,6 @@ const ExploreScreen = ({ navigation, route }) => {
           });
         }
 
-        // Get available story types from loaded locations
         const types = new Set(['all']);
         filteredLocations.forEach(loc => {
           const content = typeof loc.content === 'string' ? 
@@ -413,6 +510,64 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
+  const getFilterOptions = (filterId) => {
+    switch (filterId) {
+      case 'sort':
+        return filters.map(f => ({
+          id: f.id,
+          label: f.label,
+          icon: f.icon,
+        }));
+      case 'period':
+        return periods.map(p => ({
+          id: p.id,
+          label: p.label,
+          icon: p.icon,
+        }));
+      case 'type':
+        return availableStoryTypes.map(typeId => ({
+          id: typeId,
+          ...storyTypeIcons[typeId],
+        }));
+      default:
+        return [];
+    }
+  };
+
+  const getSelectedValue = (filterId) => {
+    switch (filterId) {
+      case 'sort':
+        return selectedFilter;
+      case 'period':
+        return selectedPeriod;
+      case 'type':
+        return selectedStoryType;
+      default:
+        return null;
+    }
+  };
+
+  const handleFilterSelect = (filterId, value) => {
+    switch (filterId) {
+      case 'sort':
+        setSelectedFilter(value);
+        if (currentCoords) {
+          fetchNearbyLocations(false, currentCoords, value);
+        } else {
+          fetchNearbyLocations(value === 'all', null, value);
+        }
+        break;
+      case 'period':
+        setSelectedPeriod(value);
+        fetchNearbyLocations(permissionStatus === 'denied');
+        break;
+      case 'type':
+        setSelectedStoryType(value);
+        fetchNearbyLocations(permissionStatus === 'denied');
+        break;
+    }
+  };
+
   const handleLocationPress = useCallback((location) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate('LocationDetail', { location });
@@ -422,6 +577,29 @@ const ExploreScreen = ({ navigation, route }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate('ARView', { location });
   }, [navigation]);
+
+  const getActiveFilters = () => {
+    const active = [];
+    if (selectedFilter !== 'all') {
+      const filter = filters.find(f => f.id === selectedFilter);
+      if (filter) active.push(filter.label);
+    }
+    if (selectedPeriod !== 'all') {
+      const period = periods.find(p => p.id === selectedPeriod);
+      if (period) active.push(period.label);
+    }
+    if (selectedStoryType !== 'all') {
+      const type = storyTypeIcons[selectedStoryType];
+      if (type) active.push(type.label);
+    }
+    return active;
+  };
+
+  const clearSearch = () => {
+    setCustomLocation('');
+    setPredictions([]);
+    setShowPredictions(false);
+  };
 
   if (loading) {
     return (
@@ -446,10 +624,6 @@ const ExploreScreen = ({ navigation, route }) => {
       </View>
     );
   }
-
-  const progressPercentage = userLevel ? 
-    ((userPoints - userLevel.minPoints) / (userLevel.nextLevel?.minPoints - userLevel.minPoints)) * 100 :
-    0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -479,200 +653,165 @@ const ExploreScreen = ({ navigation, route }) => {
       )}
 
       <BlurView intensity={80} tint="dark" style={styles.header}>
-        <View style={styles.headerTop}>
-          <BlurView intensity={30} tint="dark" style={styles.levelBanner}>
-            <View style={styles.levelInfo}>
+        <LinearGradient
+          colors={['rgba(251, 191, 36, 0.1)', 'rgba(251, 191, 36, 0.05)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.levelBanner}
+        >
+          <View style={styles.levelInfo}>
+            <View style={styles.medalContainer}>
               <MaterialIcons name="military-tech" size={24} color="#fbbf24" />
-              <View>
-                <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
-                <Text style={styles.levelSubtitle}>{userLevel?.title}</Text>
-              </View>
+            </View>
+            <View style={styles.levelTextContainer}>
+              <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
+              <Text style={styles.levelSubtitle}>{userLevel?.title || 'Explorer'}</Text>
             </View>
             <View style={styles.pointsContainer}>
               <Text style={styles.pointsValue}>{userPoints}</Text>
-              <Text style={styles.pointsLabel}>POINTS</Text>
+              <Text style={styles.pointsLabel}>PTS</Text>
             </View>
-          </BlurView>
-
-          <View style={styles.searchWrapper}>
-            <BlurView intensity={30} tint="dark" style={styles.searchContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Enter city or address..."
-                placeholderTextColor="rgba(255, 255, 255, 0.6)"
-                value={customLocation}
-                onChangeText={(text) => {
-                  setCustomLocation(text);
-                  fetchPlacePredictions(text);
-                }}
-                onSubmitEditing={searchLocation}
-              />
-              <TouchableOpacity 
-                style={styles.searchButton}
-                onPress={searchLocation}
-              >
-                <MaterialIcons name="search" size={24} color="#fff" />
-              </TouchableOpacity>
-            </BlurView>
-
-            {showPredictions && predictions.length > 0 && (
-              <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
-                {predictions.map((prediction) => (
-                  <TouchableOpacity
-                    key={prediction.place_id}
-                    style={styles.predictionItem}
-                    onPress={() => handleLocationSelect(prediction)}
-                  >
-                    <MaterialIcons name="place" size={20} color="rgba(255, 255, 255, 0.6)" />
-                    <View style={styles.predictionTextContainer}>
-                      <Text style={styles.predictionMainText}>
-                        {prediction.structured_formatting.main_text}
-                      </Text>
-                      <Text style={styles.predictionSecondaryText}>
-                        {prediction.structured_formatting.secondary_text}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </BlurView>
-            )}
           </View>
+        </LinearGradient>
+
+        <View style={styles.searchWrapper}>
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.searchContainer}
+          >
+            <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search location..."
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              value={customLocation}
+              onChangeText={(text) => {
+                setCustomLocation(text);
+                fetchPlacePredictions(text);
+              }}
+              onSubmitEditing={searchLocation}
+            />
+            {customLocation.length > 0 && (
+              <TouchableOpacity 
+                onPress={clearSearch}
+                style={styles.clearButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+              </TouchableOpacity>
+            )}
+          </LinearGradient>
+
+          {showPredictions && predictions.length > 0 && (
+            <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
+              {predictions.map((prediction) => (
+                <TouchableOpacity
+                  key={prediction.place_id}
+                  style={styles.predictionItem}
+                  onPress={() => handleLocationSelect(prediction)}
+                >
+                  <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                  <View style={styles.predictionTextContainer}>
+                    <Text style={styles.predictionMainText}>
+                      {prediction.structured_formatting.main_text}
+                    </Text>
+                    <Text style={styles.predictionSecondaryText}>
+                      {prediction.structured_formatting.secondary_text}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </BlurView>
+          )}
         </View>
 
-        <View style={styles.filterContainer}>
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterButton,
-                selectedFilter === filter.id && styles.filterButtonActive,
-              ]}
-              onPress={() => {
-                const newFilter = filter.id;
-                setSelectedFilter(newFilter);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                if (currentCoords) {
-                  fetchNearbyLocations(false, currentCoords, newFilter);
-                } else {
-                  fetchNearbyLocations(newFilter === 'all', null, newFilter);
-                }
-              }}
-            >
-              <MaterialIcons
-                name={filter.icon}
-                size={20}
-                color={selectedFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
-              />
-              <Text
+        <View style={styles.filterButtons}>
+          {filterButtons.map((filter) => {
+            const selectedValue = getSelectedValue(filter.id);
+            const options = getFilterOptions(filter.id);
+            const selectedOption = options.find(opt => opt.id === selectedValue);
+            
+            return (
+              <TouchableOpacity
+                key={filter.id}
                 style={[
-                  styles.filterText,
-                  selectedFilter === filter.id && styles.filterTextActive,
+                  styles.filterButton,
+                  activeFilter === filter.id && styles.filterButtonActive,
                 ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveFilter(filter.id);
+                }}
               >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <LinearGradient
+                  colors={activeFilter === filter.id ? 
+                    ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
+                    ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.filterButtonGradient}
+                >
+                  <MaterialIcons
+                    name={filter.icon}
+                    size={20}
+                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                    style={styles.filterIcon}
+                  />
+                  <View style={styles.filterButtonContent}>
+                    <Text style={styles.filterButtonLabel}>{filter.label}</Text>
+                    <Text 
+                      style={[
+                        styles.filterButtonValue,
+                        selectedOption && styles.filterButtonValueActive,
+                      ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {selectedOption ? selectedOption.label : 'All'}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name="keyboard-arrow-down"
+                    size={20}
+                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.4)'}
+                    style={styles.filterArrow}
+                  />
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.periodFilterContainer}
-        >
-          {periods.map((period) => (
-            <TouchableOpacity
-              key={period.id}
-              style={[
-                styles.periodButton,
-                selectedPeriod === period.id && styles.periodButtonActive,
-              ]}
-              onPress={() => {
-                setSelectedPeriod(period.id);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                fetchNearbyLocations(permissionStatus === 'denied');
-              }}
-            >
-              <MaterialIcons
-                name={period.icon}
-                size={20}
-                color={selectedPeriod === period.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
-              />
-              <Text
-                style={[
-                  styles.periodText,
-                  selectedPeriod === period.id && styles.periodTextActive,
-                ]}
-              >
-                {period.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.storyTypeFilterContainer}
-      >
-        {availableStoryTypes.map((typeId) => {
-          const type = storyTypeIcons[typeId];
-          if (!type) return null;
-          
-          return (
-            <TouchableOpacity
-              key={typeId}
-              style={[
-                styles.storyTypeButton,
-                selectedStoryType === typeId && styles.storyTypeButtonActive,
-              ]}
-              onPress={() => {
-                setSelectedStoryType(typeId);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                fetchNearbyLocations(permissionStatus === 'denied');
-              }}
-            >
-              <MaterialIcons
-                name={type.icon}
-                size={20}
-                color={selectedStoryType === typeId ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
-              />
-              <Text
-                style={[
-                  styles.storyTypeText,
-                  selectedStoryType === typeId && styles.storyTypeTextActive,
-                ]}
-              >
-                {type.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
       </BlurView>
 
-      <Animated.FlatList
-        data={locations}
-        renderItem={({ item, index }) => (
-          <LocationCard
-            location={item}
-            onPress={() => handleLocationPress(item)}
-            onARPress={() => handleARPress(item)}
-            index={index}
-            scrollX={scrollX}
-          />
-        )}
-        keyExtractor={(item) => item.id.toString()}
-        horizontal
-        pagingEnabled
-        snapToInterval={CARD_WIDTH + SPACING * 2}
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: true }
-        )}
+     
+
+        <Animated.FlatList
+          data={locations}
+          renderItem={({ item, index }) => (
+            <LocationCard
+              location={item}
+              onPress={() => handleLocationPress(item)}
+              onARPress={() => handleARPress(item)}
+              index={index}
+              scrollX={scrollX}
+            />
+          )}
+          keyExtractor={(item) => item.id.toString()}
+          horizontal
+          pagingEnabled
+          snapToInterval={CARD_WIDTH + SPACING * 2}
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            getActiveFilters().length > 0 && { paddingTop: 60 }
+          ]}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
+          )}
         scrollEventThrottle={16}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -682,6 +821,19 @@ const ExploreScreen = ({ navigation, route }) => {
           </View>
         }
       />
+
+      {/* Filter Modals */}
+      {filterButtons.map((filter) => (
+        <FilterModal
+          key={filter.id}
+          visible={activeFilter === filter.id}
+          onClose={() => setActiveFilter(null)}
+          title={filter.label}
+          options={getFilterOptions(filter.id)}
+          selectedValue={getSelectedValue(filter.id)}
+          onSelect={(value) => handleFilterSelect(filter.id, value)}
+        />
+      ))}
     </SafeAreaView>
   );
 };
@@ -699,116 +851,210 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 24,
     overflow: 'hidden',
   },
-  headerTop: {
-    marginBottom: 16,
-  },
   levelBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
+    shadowColor: '#fbbf24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   levelInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+  },
+  medalContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  levelTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 'auto',
   },
   levelTitle: {
     color: '#fbbf24',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
+    textShadowColor: 'rgba(251, 191, 36, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   levelSubtitle: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 13,
     opacity: 0.8,
+    marginTop: 2,
   },
   pointsContainer: {
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    minWidth: 80,
   },
   pointsValue: {
     color: '#fbbf24',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
   },
   pointsLabel: {
     color: '#fff',
     fontSize: 12,
+    fontWeight: '500',
     opacity: 0.8,
-  },
-  searchWrapper: {
-    position: 'relative',
-    zIndex: 1,
+    marginTop: 2,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchInput: {
     flex: 1,
     color: '#fff',
     fontSize: 16,
-    marginRight: 12,
+    marginLeft: 12,
+    marginRight: 8,
+    fontWeight: '500',
   },
-  searchButton: {
+  clearButton: {
     padding: 8,
+    marginRight: -8,
     borderRadius: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.3)',
   },
-  predictionsContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: 4,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    maxHeight: 200,
-  },
-  predictionItem: {
+  filterButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-    gap: 12,
-  },
-  predictionText: {
-    color: '#fff',
-    fontSize: 14,
-    flex: 1,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 20,
-    padding: 4,
+    justifyContent: 'space-between',
     marginTop: 16,
+    gap: 8,
   },
   filterButton: {
     flex: 1,
+    minWidth: (SCREEN_WIDTH - 64) / 3,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  filterButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 16,
-    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
   },
   filterButtonActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderColor: '#3b82f6',
+  },
+  filterIcon: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  filterButtonContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  filterButtonLabel: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  filterButtonValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  filterButtonValueActive: {
+    color: '#3b82f6',
+  },
+  filterArrow: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    maxHeight: SCREEN_HEIGHT * 0.7,
+  },
+  modalBlur: {
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  optionButtonSelected: {
     backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  optionText: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  optionTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  optionCheckmark: {
+    marginLeft: 'auto',
   },
   filterText: {
     color: 'rgba(255, 255, 255, 0.6)',
