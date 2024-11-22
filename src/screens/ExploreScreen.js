@@ -14,6 +14,7 @@ import {
   Alert,
   Modal,
   ScrollView,
+  KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -150,6 +151,11 @@ const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect
   }, [visible]);
 
   return (
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
     <Modal
       visible={visible}
       transparent
@@ -219,6 +225,7 @@ const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect
         </Animated.View>
       </TouchableOpacity>
     </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -633,33 +640,38 @@ const ExploreScreen = ({ navigation, route }) => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {recentAchievement && (
-        <Animated.View style={[
-          styles.achievementPopup,
-          {
-            transform: [
-              { scale: achievementAnim },
-              { translateY: achievementAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-100, 0]
-              })}
-            ],
-            opacity: achievementAnim
-          }
-        ]}>
-          <BlurView intensity={80} tint="dark" style={styles.achievementContent}>
-            <MaterialIcons name={recentAchievement.icon} size={24} color="#fbbf24" />
-            <View>
-              <Text style={styles.achievementTitle}>{recentAchievement.title}</Text>
-              <Text style={styles.achievementDesc}>{recentAchievement.description}</Text>
-            </View>
-            <Text style={styles.achievementPoints}>+{recentAchievement.points}</Text>
-          </BlurView>
-        </Animated.View>
-      )}
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <SafeAreaView style={styles.container}>
+        {recentAchievement && (
+          <Animated.View style={[
+            styles.achievementPopup,
+            {
+              transform: [
+                { scale: achievementAnim },
+                { translateY: achievementAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-100, 0]
+                })}
+              ],
+              opacity: achievementAnim
+            }
+          ]}>
+            <BlurView intensity={80} tint="dark" style={styles.achievementContent}>
+              <MaterialIcons name={recentAchievement.icon} size={24} color="#fbbf24" />
+              <View>
+                <Text style={styles.achievementTitle}>{recentAchievement.title}</Text>
+                <Text style={styles.achievementDesc}>{recentAchievement.description}</Text>
+              </View>
+              <Text style={styles.achievementPoints}>+{recentAchievement.points}</Text>
+            </BlurView>
+          </Animated.View>
+        )}
 
-      <BlurView intensity={80} tint="dark" style={styles.header}>
+        <BlurView intensity={80} tint="dark" style={styles.header}>
         <LinearGradient
           colors={['rgba(251, 191, 36, 0.1)', 'rgba(251, 191, 36, 0.05)']}
           start={{ x: 0, y: 0 }}
@@ -681,46 +693,46 @@ const ExploreScreen = ({ navigation, route }) => {
           </View>
         </LinearGradient>
 
-        <View style={styles.searchWrapper}>
-          <LinearGradient
-            colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.searchContainer}
-          >
-            <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search location..."
-              placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              value={customLocation}
-              onChangeText={(text) => {
-                setCustomLocation(text);
-                fetchPlacePredictions(text);
-              }}
-              onSubmitEditing={searchLocation}
-            />
-            {customLocation.length > 0 && (
-              <TouchableOpacity 
-                onPress={clearSearch}
-                style={styles.clearButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
-              </TouchableOpacity>
-            )}
-          </LinearGradient>
-
-          {showPredictions && (predictions.length > 0 || localSearchResults.length > 0) && (
-            <View style={styles.predictionsWrapper}>
-              <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
-                <ScrollView 
-                  style={styles.predictionsScroll}
-                  bounces={false} 
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={true}
-                  nestedScrollEnabled={true}
+          <View style={styles.searchWrapper}>
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.searchContainer}
+            >
+              <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search location..."
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                value={customLocation}
+                onChangeText={(text) => {
+                  setCustomLocation(text);
+                  fetchPlacePredictions(text);
+                }}
+                onSubmitEditing={searchLocation}
+              />
+              {customLocation.length > 0 && (
+                <TouchableOpacity 
+                  onPress={clearSearch}
+                  style={styles.clearButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
+                  <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+                </TouchableOpacity>
+              )}
+            </LinearGradient>
+
+            {showPredictions && (predictions.length > 0 || localSearchResults.length > 0) && (
+              <View style={styles.predictionsWrapper}>
+                <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
+                  <ScrollView 
+                    style={styles.predictionsScroll}
+                    bounces={false} 
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled={true}
+                  >
                   {localSearchResults.length > 0 && (
                     <View>
                       <View style={styles.predictionSectionHeader}>
@@ -774,11 +786,11 @@ const ExploreScreen = ({ navigation, route }) => {
                       ))}
                     </View>
                   )}
-                </ScrollView>
-              </BlurView>
-            </View>
-          )}
-        </View>
+                  </ScrollView>
+                </BlurView>
+              </View>
+            )}
+          </View>
 
         <View style={styles.filterButtons}>
           {filterButtons.map((filter) => (
@@ -827,7 +839,7 @@ const ExploreScreen = ({ navigation, route }) => {
             ))}
           </BlurView>
         )}
-      </BlurView>
+        </BlurView>
 
       <Animated.FlatList
         data={locations}
@@ -872,7 +884,8 @@ const ExploreScreen = ({ navigation, route }) => {
           onSelect={(value) => handleFilterSelect(filter.id, value)}
         />
       ))}
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -887,8 +900,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    overflow: 'hidden',
+    // Removed overflow: 'hidden' to allow dropdown to be visible
   },
+
   levelBanner: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -953,8 +967,8 @@ const styles = StyleSheet.create({
   },
   searchWrapper: {
     marginTop: 16,
-    zIndex: 1000,
-    elevation: 1000, // For Android
+    zIndex: 2000, // Increased from 1000
+    elevation: 2000, // Increased from 1000
     position: 'relative',
   },
   searchContainer: {
@@ -976,24 +990,24 @@ const styles = StyleSheet.create({
   clearButton: {
     padding: 4,
   },
-  predictionsContainer: {
+  predictionsWrapper: {
     position: 'absolute',
     top: '100%',
     left: 0,
     right: 0,
     marginTop: 4,
-    zIndex: 9999,
-    elevation: 9999, // For Android
+    zIndex: 2000, // Increased from 9999
+    elevation: 2000, // Increased from 9999
   },
-
   predictionsContainer: {
     borderRadius: 16,
     overflow: 'hidden',
-    maxHeight: SCREEN_HEIGHT * 0.4, // 40% of screen height
+    maxHeight: SCREEN_HEIGHT * 0.4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Added for better visibility
   },
 
   predictionsScroll: {
