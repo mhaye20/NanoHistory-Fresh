@@ -13,6 +13,7 @@ import {
   TextInput,
   Alert,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -70,7 +71,6 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
           resizeMode="cover"
         />
         
-        {/* Top Label Overlay */}
         <BlurView intensity={50} tint="dark" style={styles.topLabelOverlay}>
           <Text style={styles.topLabelText}>{location.period}</Text>
         </BlurView>
@@ -237,6 +237,7 @@ const ExploreScreen = ({ navigation, route }) => {
   const [currentCoords, setCurrentCoords] = useState(null);
   const [predictions, setPredictions] = useState([]);
   const [showPredictions, setShowPredictions] = useState(false);
+  const [localSearchResults, setLocalSearchResults] = useState([]);
   const scrollX = useRef(new Animated.Value(0)).current;
   const achievementAnim = useRef(new Animated.Value(0)).current;
   const [selectedStoryType, setSelectedStoryType] = useState('all');
@@ -362,11 +363,22 @@ const ExploreScreen = ({ navigation, route }) => {
     debounce(async (input) => {
       if (!input.trim()) {
         setPredictions([]);
+        setLocalSearchResults([]);
         setShowPredictions(false);
         return;
       }
 
       try {
+        // Search through local locations first
+        const searchTerm = input.toLowerCase();
+        const matchingLocations = locations.filter(location => 
+          location.title.toLowerCase().includes(searchTerm) ||
+          (location.content && typeof location.content === 'string' && 
+           JSON.parse(location.content).story_location?.toLowerCase().includes(searchTerm))
+        );
+        setLocalSearchResults(matchingLocations);
+
+        // Then fetch Google Maps predictions
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
             input
@@ -391,7 +403,7 @@ const ExploreScreen = ({ navigation, route }) => {
         console.error('Error fetching predictions:', err);
       }
     }, 300),
-    []
+    [locations]
   );
 
   const handleLocationSelect = async (prediction) => {
@@ -409,6 +421,13 @@ const ExploreScreen = ({ navigation, route }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLocalLocationSelect = (location) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowPredictions(false);
+    setCustomLocation('');
+    handleLocationPress(location);
   };
 
   const searchLocation = async () => {
@@ -585,6 +604,7 @@ const ExploreScreen = ({ navigation, route }) => {
   const clearSearch = () => {
     setCustomLocation('');
     setPredictions([]);
+    setLocalSearchResults([]);
     setShowPredictions(false);
   };
 
@@ -691,26 +711,72 @@ const ExploreScreen = ({ navigation, route }) => {
             )}
           </LinearGradient>
 
-          {showPredictions && predictions.length > 0 && (
-            <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
-              {predictions.map((prediction) => (
-                <TouchableOpacity
-                  key={prediction.place_id}
-                  style={styles.predictionItem}
-                  onPress={() => handleLocationSelect(prediction)}
+          {showPredictions && (predictions.length > 0 || localSearchResults.length > 0) && (
+            <View style={styles.predictionsWrapper}>
+              <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
+                <ScrollView 
+                  style={styles.predictionsScroll}
+                  bounces={false} 
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
                 >
-                  <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
-                  <View style={styles.predictionTextContainer}>
-                    <Text style={styles.predictionMainText}>
-                      {prediction.structured_formatting.main_text}
-                    </Text>
-                    <Text style={styles.predictionSecondaryText}>
-                      {prediction.structured_formatting.secondary_text}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </BlurView>
+                  {localSearchResults.length > 0 && (
+                    <View>
+                      <View style={styles.predictionSectionHeader}>
+                        <MaterialIcons name="history-edu" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        <Text style={styles.predictionSectionTitle}>Story Locations</Text>
+                      </View>
+                      {localSearchResults.map((location) => (
+                        <TouchableOpacity
+                          key={location.id}
+                          style={styles.predictionItem}
+                          onPress={() => handleLocalLocationSelect(location)}
+                        >
+                          <MaterialIcons name="auto-stories" size={18} color="#10b981" />
+                          <View style={styles.predictionTextContainer}>
+                            <Text style={styles.predictionMainText}>
+                              {location.title}
+                            </Text>
+                            <Text style={styles.predictionSecondaryText}>
+                              {typeof location.content === 'string' 
+                                ? JSON.parse(location.content).story_location 
+                                : location.content?.story_location}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {predictions.length > 0 && (
+                    <View>
+                      <View style={styles.predictionSectionHeader}>
+                        <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        <Text style={styles.predictionSectionTitle}>Places</Text>
+                      </View>
+                      {predictions.map((prediction) => (
+                        <TouchableOpacity
+                          key={prediction.place_id}
+                          style={styles.predictionItem}
+                          onPress={() => handleLocationSelect(prediction)}
+                        >
+                          <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                          <View style={styles.predictionTextContainer}>
+                            <Text style={styles.predictionMainText}>
+                              {prediction.structured_formatting.main_text}
+                            </Text>
+                            <Text style={styles.predictionSecondaryText}>
+                              {prediction.structured_formatting.secondary_text}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+              </BlurView>
+            </View>
           )}
         </View>
 
@@ -887,6 +953,9 @@ const styles = StyleSheet.create({
   },
   searchWrapper: {
     marginTop: 16,
+    zIndex: 1000,
+    elevation: 1000, // For Android
+    position: 'relative',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -913,9 +982,36 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     marginTop: 4,
+    zIndex: 9999,
+    elevation: 9999, // For Android
+  },
+
+  predictionsContainer: {
     borderRadius: 16,
     overflow: 'hidden',
-    zIndex: 1000,
+    maxHeight: SCREEN_HEIGHT * 0.4, // 40% of screen height
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+
+  predictionsScroll: {
+    flexGrow: 0,
+  },
+
+  predictionSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    gap: 8,
+  },
+  predictionSectionTitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    fontWeight: '600',
   },
   predictionItem: {
     flexDirection: 'row',
@@ -967,60 +1063,6 @@ const styles = StyleSheet.create({
   },
   activeFiltersContainer: {
     marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-  },
-  activeFilterText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-    opacity: 0.8,
-  },
-  card: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    marginHorizontal: SPACING,
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: '#1a1a2e',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  cardTouchable: {
-    flex: 1,
-  },
-  locationImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  topLabelOverlay: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    zIndex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  topLabelText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.9,
-  },
-  activeFiltersContainer: {
-    marginTop: 12,
     marginHorizontal: 16,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -1039,8 +1081,7 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     paddingHorizontal: 4,
   },
-
- gradient: {
+  gradient: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
   },
@@ -1255,6 +1296,45 @@ const styles = StyleSheet.create({
   listContent: {
     paddingVertical: 24,
     paddingHorizontal: SPACING,
+  },
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    marginHorizontal: SPACING,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a2e',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  cardTouchable: {
+    flex: 1,
+  },
+  locationImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  topLabelOverlay: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  topLabelText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.9,
   },
 });
 
