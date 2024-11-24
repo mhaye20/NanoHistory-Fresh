@@ -7,7 +7,7 @@ const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
 );
 
-// List of story types with descriptions
+// Updated to match ExploreScreen's storyTypeIcons
 const VALID_TYPES = [
     'music',          // Stories about musical history, musicians, venues, or musical traditions
     'visualArt',      // Stories about paintings, sculptures, galleries, or visual artists
@@ -16,7 +16,7 @@ const VALID_TYPES = [
     'fashion',        // Stories about clothing, style trends, fashion designers, or textile history
     'culinary',       // Stories about food history, restaurants, cooking traditions, or cuisine
     'landscape',      // Stories about parks, gardens, natural landmarks, or landscape design
-    'lore',           // Mythical tales and folklore tied to the area
+    'lore',          // Mythical tales and folklore tied to the area
     'paranormal',     // Stories about ghost sightings, supernatural events, or unexplained phenomena
     'unsungHero',     // ONLY for stories about specific individuals who made important but overlooked contributions
     'popCulture',     // Famous movies, books, or events inspired by the location
@@ -206,9 +206,9 @@ async function initializeLocation(latitude, longitude, description, suggestedTyp
             .insert([{
                 location_id: location.id,
                 content: processedStory,
+                story_types: suggestedTypes,
                 created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                story_types: suggestedTypes
+                updated_at: new Date().toISOString()
             }]);
 
         if (storyError) {
@@ -228,8 +228,7 @@ function processStoryContent(storyData) {
             facts: Array.isArray(content?.facts) ? content.facts : [],
             historicalPeriods: Array.isArray(content?.historicalPeriods) ? content.historicalPeriods : [],
             suggestedActivities: Array.isArray(content?.suggestedActivities) ? content.suggestedActivities : [],
-            imageUrl: content?.imageUrl,
-            storyTypes: content?.storyTypes || []
+            imageUrl: content?.imageUrl
         };
     } catch (error) {
         console.error('Error processing story content:', error);
@@ -237,8 +236,7 @@ function processStoryContent(storyData) {
             story: 'Error processing story content',
             facts: [],
             historicalPeriods: [],
-            suggestedActivities: [],
-            storyTypes: []
+            suggestedActivities: []
         };
     }
 }

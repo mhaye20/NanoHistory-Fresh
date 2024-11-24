@@ -465,7 +465,7 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
-  const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
+const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
     setLoading(true);
     try {
       let locationData = null;
@@ -482,6 +482,17 @@ const ExploreScreen = ({ navigation, route }) => {
 
       const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
 
+      console.log('[ExploreScreen] Fetching locations with params:', {
+        skipLocation,
+        customCoords,
+        filterOverride,
+        selectedFilter,
+        selectedPeriod,
+        selectedStoryType,
+        searchRadius,
+        currentStoryTypes: availableStoryTypes
+      });
+
       const result = await getNearbyLocations(
         locationData?.coords.latitude,
         locationData?.coords.longitude,
@@ -490,33 +501,83 @@ const ExploreScreen = ({ navigation, route }) => {
       );
 
       if (result?.locations) {
+        console.log('[ExploreScreen] Got locations from API:', {
+          count: result.locations.length,
+          firstLocation: result.locations[0] ? {
+            id: result.locations[0].id,
+            title: result.locations[0].title,
+            story_types: result.locations[0].story_types
+          } : null,
+          allTypes: result.locations.map(loc => ({
+            id: loc.id,
+            types: loc.story_types
+          }))
+        });
+
         let filteredLocations = selectedPeriod === 'all' 
           ? result.locations 
           : result.locations.filter(loc => 
               loc.period?.toLowerCase().includes(selectedPeriod.toLowerCase())
             );
+
+        console.log('[ExploreScreen] After period filter:', {
+          beforeCount: result.locations.length,
+          afterCount: filteredLocations.length,
+          selectedPeriod
+        });
         
         if (selectedStoryType !== 'all') {
-          filteredLocations = filteredLocations.filter(loc => {
-            const content = typeof loc.content === 'string' ? 
-              JSON.parse(loc.content) : loc.content;
-            return content?.story_types?.includes(selectedStoryType);
+          console.log('[ExploreScreen] Filtering by story type:', {
+            selectedType: selectedStoryType,
+            beforeCount: filteredLocations.length,
+            locationsWithTypes: filteredLocations.filter(loc => 
+              Array.isArray(loc.story_types) && loc.story_types.length > 0
+            ).length
+          });
+
+          filteredLocations = filteredLocations.filter(loc => 
+            Array.isArray(loc.story_types) && loc.story_types.includes(selectedStoryType)
+          );
+
+          console.log('[ExploreScreen] After story type filter:', {
+            afterCount: filteredLocations.length,
+            remainingTypes: filteredLocations.map(loc => ({
+              id: loc.id,
+              types: loc.story_types
+            }))
           });
         }
 
+        // Collect all unique story types
         const types = new Set(['all']);
         filteredLocations.forEach(loc => {
-          const content = typeof loc.content === 'string' ? 
-            JSON.parse(loc.content) : loc.content;
-          content?.story_types?.forEach(type => types.add(type));
+          if (Array.isArray(loc.story_types)) {
+            loc.story_types.forEach(type => types.add(type));
+          }
         });
-        setAvailableStoryTypes(Array.from(types));
-        
+
+        const availableTypes = Array.from(types);
+        console.log('[ExploreScreen] Available story types:', {
+          types: availableTypes,
+          count: availableTypes.length,
+          locationsWithTypes: filteredLocations.filter(loc => 
+            Array.isArray(loc.story_types) && loc.story_types.length > 0
+          ).length,
+          typeDistribution: availableTypes.reduce((acc, type) => {
+            if (type === 'all') return acc;
+            acc[type] = filteredLocations.filter(loc => 
+              Array.isArray(loc.story_types) && loc.story_types.includes(type)
+            ).length;
+            return acc;
+          }, {})
+        });
+
+        setAvailableStoryTypes(availableTypes);
         setLocations(filteredLocations);
         setError(null);
       }
     } catch (err) {
-      console.error('Error fetching locations:', err);
+      console.error('[ExploreScreen] Error fetching locations:', err);
       setError('Failed to fetch locations');
     } finally {
       setLoading(false);
@@ -538,16 +599,27 @@ const ExploreScreen = ({ navigation, route }) => {
           icon: p.icon,
         }));
       case 'type':
-        return availableStoryTypes.map(typeId => ({
-          id: typeId,
-          ...storyTypeIcons[typeId],
-        }));
+        return availableStoryTypes.map(typeId => {
+          // If we have a predefined icon/label for this type, use it
+          if (storyTypeIcons[typeId]) {
+            return {
+              id: typeId,
+              ...storyTypeIcons[typeId],
+            };
+          }
+          // Otherwise create a default icon/label
+          return {
+            id: typeId,
+            label: typeId.charAt(0).toUpperCase() + typeId.slice(1).replace(/([A-Z])/g, ' $1'),
+            icon: 'category'
+          };
+        });
       default:
         return [];
     }
   };
 
-  const getSelectedValue = (filterId) => {
+const getSelectedValue = (filterId) => {
     switch (filterId) {
       case 'sort':
         return selectedFilter;
@@ -560,7 +632,13 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
-  const handleFilterSelect = (filterId, value) => {
+const handleFilterSelect = (filterId, value) => {
+    console.log('[ExploreScreen] Filter selected:', {
+      filterId,
+      value,
+      previousValue: getSelectedValue(filterId)
+    });
+
     switch (filterId) {
       case 'sort':
         setSelectedFilter(value);
@@ -575,6 +653,16 @@ const ExploreScreen = ({ navigation, route }) => {
         fetchNearbyLocations(permissionStatus === 'denied');
         break;
       case 'type':
+        console.log('[ExploreScreen] Story type filter selected:', {
+          previousType: selectedStoryType,
+          newType: value,
+          availableTypes: availableStoryTypes,
+          currentLocations: locations.map(loc => ({
+            id: loc.id,
+            title: loc.title,
+            story_types: loc.story_types
+          }))
+        });
         setSelectedStoryType(value);
         fetchNearbyLocations(permissionStatus === 'denied');
         break;
@@ -602,8 +690,15 @@ const ExploreScreen = ({ navigation, route }) => {
       if (period) active.push(period.label);
     }
     if (selectedStoryType !== 'all') {
+      // If we have a predefined icon/label for this type, use it
       const type = storyTypeIcons[selectedStoryType];
-      if (type) active.push(type.label);
+      if (type) {
+        active.push(type.label);
+      } else {
+        // Otherwise create a formatted label
+        active.push(selectedStoryType.charAt(0).toUpperCase() + 
+          selectedStoryType.slice(1).replace(/([A-Z])/g, ' $1'));
+      }
     }
     return active;
   };

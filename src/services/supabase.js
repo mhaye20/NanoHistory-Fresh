@@ -165,12 +165,13 @@ export const initializeLocations = async (latitude, longitude) => {
         throw locationError;
       }
 
-      // Create AI story
+      // Create AI story with story types
       const { error: storyError } = await adminClient
         .from('ai_generated_stories')
         .insert([{
           location_id: location.id,
-          content: item.story,
+          content: item.story.content,
+          story_types: item.story.story_types,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }]);
@@ -195,10 +196,21 @@ export const getLocationDetails = async (locationId) => {
     const { data: location, error: locationError } = await adminClient
       .from('locations')
       .select(`
-        *,
+        id,
+        title,
+        description,
+        latitude,
+        longitude,
+        image_url,
+        rating,
+        visit_count,
+        historical_period,
+        category,
+        updated_at,
         stories (*),
         ai_generated_stories (
-          content
+          content,
+          story_types
         )
       `)
       .eq('id', locationId)
@@ -209,7 +221,7 @@ export const getLocationDetails = async (locationId) => {
       throw locationError;
     }
 
-    const aiStory = location.ai_generated_stories?.[0]?.content;
+    const aiStory = location.ai_generated_stories?.[0];
     const hasUserStories = location.stories && location.stories.length > 0;
 
     const transformedLocation = {
@@ -226,14 +238,16 @@ export const getLocationDetails = async (locationId) => {
       period: location.historical_period,
       category: location.category,
       lastUpdated: location.updated_at,
-      aiGeneratedStory: aiStory,
-      userStories: location.stories || []
+      aiGeneratedStory: aiStory?.content,
+      userStories: location.stories || [],
+      story_types: aiStory?.story_types || []
     };
 
     logDebug('Locations', 'Location details fetched', { 
       locationId,
       hasStories: hasUserStories,
-      hasAiStory: !!aiStory
+      hasAiStory: !!aiStory,
+      storyTypes: transformedLocation.story_types
     });
 
     return transformedLocation;
@@ -252,6 +266,26 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       radius
     });
 
+    // First get all ai_generated_stories to ensure we have the story types
+    const { data: aiStories, error: aiError } = await adminClient
+      .from('ai_generated_stories')
+      .select('*');
+
+    if (aiError) {
+      logError('Locations', aiError);
+      return { locations: [], hasMore: false };
+    }
+
+    // Create a map of location_id to story types for quick lookup
+    const storyTypesMap = aiStories.reduce((acc, story) => {
+      if (story.location_id && Array.isArray(story.story_types)) {
+        acc[story.location_id] = story.story_types;
+      }
+      return acc;
+    }, {});
+
+    logDebug('Locations', 'Story types map:', storyTypesMap);
+
     let query;
 
     if (filter === 'stories') {
@@ -259,10 +293,22 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       query = adminClient
         .from('locations')
         .select(`
-          *,
+          id,
+          title,
+          description,
+          latitude,
+          longitude,
+          image_url,
+          rating,
+          visit_count,
+          historical_period,
+          category,
+          updated_at,
           stories!inner (*),
           ai_generated_stories (
-            content
+            id,
+            content,
+            story_types
           )
         `)
         .order('updated_at', { ascending: false });
@@ -271,10 +317,22 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       query = adminClient
         .from('locations')
         .select(`
-          *,
+          id,
+          title,
+          description,
+          latitude,
+          longitude,
+          image_url,
+          rating,
+          visit_count,
+          historical_period,
+          category,
+          updated_at,
           stories (*),
           ai_generated_stories (
-            content
+            id,
+            content,
+            story_types
           )
         `);
 
@@ -292,6 +350,18 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       return { locations: [], hasMore: false };
     }
 
+    // Log raw data for debugging
+    logDebug('Locations', 'Raw data from database:', {
+      locationCount: result.data?.length,
+      firstLocation: result.data?.[0] ? {
+        id: result.data[0].id,
+        title: result.data[0].title,
+        story_types: storyTypesMap[result.data[0].id] || [],
+        raw_ai_stories: result.data[0].ai_generated_stories,
+        story_types_from_ai: result.data[0].ai_generated_stories?.[0]?.story_types
+      } : null
+    });
+
     // If no locations found and coordinates are provided, try to initialize locations
     if ((!result.data || result.data.length === 0) && latitude && longitude) {
       logDebug('Locations', 'No locations found, initializing...');
@@ -307,7 +377,20 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
 
     // Transform locations with distances and stories
     const transformedLocations = (result.data || []).map(location => {
-      const aiStory = location.ai_generated_stories?.[0]?.content;
+      const aiStory = location.ai_generated_stories?.[0];
+      // Try to get story types from our map first, then fall back to the AI story
+      const storyTypes = storyTypesMap[location.id] || aiStory?.story_types || [];
+      
+      logDebug('Locations', `Story types for location ${location.id}:`, {
+        locationId: location.id,
+        title: location.title,
+        storyTypes: JSON.stringify(storyTypes),
+        storyTypesFromMap: storyTypesMap[location.id],
+        storyTypesFromAi: aiStory?.story_types,
+        hasAiStories: location.ai_generated_stories?.length > 0,
+        rawAiStories: location.ai_generated_stories
+      });
+
       const hasUserStories = location.stories && location.stories.length > 0;
 
       // If we have coordinates, calculate distance
@@ -342,8 +425,9 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
         period: location.historical_period,
         category: location.category,
         lastUpdated: location.updated_at,
-        aiGeneratedStory: aiStory,
-        userStories: location.stories || []
+        aiGeneratedStory: aiStory?.content,
+        userStories: location.stories || [],
+        story_types: storyTypes
       };
     });
 
@@ -360,9 +444,35 @@ export const getNearbyLocations = async (latitude, longitude, filter = 'all', ra
       );
     }
 
-    logDebug('Locations', 'Nearby locations fetched', {
-      found: sortedLocations.length,
-      total: result.count
+    // Log story types for each location after transformation
+    logDebug('Locations', 'Story types after transformation:', {
+      locations: sortedLocations.map(loc => ({
+        id: loc.id,
+        title: loc.title,
+        story_types: JSON.stringify(loc.story_types)
+      }))
+    });
+
+    // Collect all unique story types
+    const allTypes = new Set(['all']);
+    sortedLocations.forEach(loc => {
+      if (Array.isArray(loc.story_types)) {
+        loc.story_types.forEach(type => allTypes.add(type));
+      }
+    });
+
+    const availableTypes = Array.from(allTypes);
+    logDebug('Locations', 'Available story types:', {
+      types: availableTypes,
+      count: availableTypes.length,
+      locationsWithTypes: sortedLocations.filter(loc => Array.isArray(loc.story_types) && loc.story_types.length > 0).length,
+      typeDistribution: availableTypes.reduce((acc, type) => {
+        if (type === 'all') return acc;
+        acc[type] = sortedLocations.filter(loc => 
+          Array.isArray(loc.story_types) && loc.story_types.includes(type)
+        ).length;
+        return acc;
+      }, {})
     });
 
     return {

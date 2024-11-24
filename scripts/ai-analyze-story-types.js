@@ -155,6 +155,7 @@ async function updateStoryTypes() {
         
         let processedCount = 0;
         let updatedCount = 0;
+        let skippedCount = 0;
         let errorCount = 0;
         let typeDistribution = {};
 
@@ -174,6 +175,20 @@ async function updateStoryTypes() {
             for (const story of stories) {
                 try {
                     console.log(`\n=== Processing story ID ${story.id} ===`);
+                    
+                    // Check if story has invalid types
+                    const hasInvalidTypes = !story.story_types || 
+                                         !Array.isArray(story.story_types) || 
+                                         story.story_types.length !== 2 ||
+                                         !story.story_types.every(type => VALID_TYPES.includes(type));
+
+                    if (!hasInvalidTypes) {
+                        console.log('Story has valid story types:', story.story_types);
+                        console.log('Skipping...');
+                        skippedCount++;
+                        continue;
+                    }
+
                     console.log('Story excerpt:', story.content?.story?.substring(0, 200) + '...');
                     
                     let content = story.content;
@@ -190,14 +205,15 @@ async function updateStoryTypes() {
                             typeDistribution[type] = (typeDistribution[type] || 0) + 1;
                         });
 
-                        // Update the content with story types
-                        content.storyTypes = storyTypes;
+                        // Remove storyTypes from content if it exists
+                        const { storyTypes: removed, ...newContent } = content;
                         
-                        // Update the story in the database
+                        // Update both story_types column and content
                         const { error: updateError } = await supabase
                             .from('ai_generated_stories')
                             .update({
-                                content: content,
+                                content: newContent,
+                                story_types: storyTypes,
                                 updated_at: new Date().toISOString()
                             })
                             .eq('id', story.id);
@@ -225,10 +241,12 @@ async function updateStoryTypes() {
 
             processedCount += stories.length;
             console.log(`\nProgress: ${processedCount}/${count} stories processed`);
+            console.log(`Updated: ${updatedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}`);
         }
 
         console.log('\nAI story type analysis complete!');
         console.log(`Successfully updated ${updatedCount} stories`);
+        console.log(`Skipped ${skippedCount} stories (already had valid types)`);
         console.log(`Failed to update ${errorCount} stories`);
         
         // Print type distribution

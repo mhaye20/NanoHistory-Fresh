@@ -24,7 +24,7 @@ export default async function handler(req) {
 
   try {
     const body = await req.json();
-    const { latitude, longitude } = body;
+    const { latitude, longitude, customPrompt } = body;
 
     // Log environment variable status
     console.log('[Initialize] Environment variables check:', {
@@ -156,7 +156,7 @@ export default async function handler(req) {
 
       // Generate story
       console.log('[Initialize] Generating story...');
-      const storyPrompt = `Generate a detailed historical story about "${loc.title}" in ${locationContext}.
+      const storyPrompt = customPrompt || `Generate a detailed historical story about "${loc.title}" in ${locationContext}.
       Focus specifically on:
       - The physical building/site itself
       - Its architectural features and design
@@ -165,6 +165,21 @@ export default async function handler(req) {
       - Notable events that happened at this specific location
       - Its role in the local community
       
+      Also identify exactly TWO of these story types that best match this location:
+      - music: Stories about musical history, musicians, venues, or musical traditions
+      - visualArt: Stories about paintings, sculptures, galleries, or visual artists
+      - performingArt: Stories about theater, dance, performance venues, or performing artists
+      - architecture: Stories about building design, architectural styles, or construction methods
+      - fashion: Stories about clothing, style trends, fashion designers, or textile history
+      - culinary: Stories about food history, restaurants, cooking traditions, or cuisine
+      - landscape: Stories about parks, gardens, natural landmarks, or landscape design
+      - lore: Mythical tales and folklore tied to the area
+      - paranormal: Stories about ghost sightings, supernatural events, or unexplained phenomena
+      - unsungHero: ONLY for stories about specific individuals who made important but overlooked contributions
+      - popCulture: Famous movies, books, or events inspired by the location
+      - civilRights: Stories about equality movements, social justice, or civil rights activism
+      - education: Stories about schools, libraries, educational institutions, or learning
+      
       Do NOT include general area history unless directly related to this building/site.
       
       Return in this JSON format:
@@ -172,10 +187,11 @@ export default async function handler(req) {
         "story": "Detailed narrative about this specific building/site",
         "facts": ["Specific fact about this building/site", "Another specific fact", "A third specific fact"],
         "historicalPeriods": ["Periods relevant to this building/site"],
-        "suggestedActivities": ["Activities related to this specific location"]
+        "suggestedActivities": ["Activities related to this specific location"],
+        "storyTypes": ["type1", "type2"]
       }`;
 
-      const storyResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+       const storyResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,9 +222,13 @@ export default async function handler(req) {
       const storyData = await storyResponse.json();
       const story = JSON.parse(storyData.choices[0].message.content);
 
-      // Add the image URL to the story content
+      // Extract story types and remove from content
+      const storyTypes = story.storyTypes || [];
+      const { storyTypes: removed, ...storyContent } = story;
+
+      // Add the image URL to the story content, but NOT story types
       const storyWithImage = {
-        ...story,
+        ...storyContent,
         imageUrl: imageUrl
       };
 
@@ -227,6 +247,7 @@ export default async function handler(req) {
         },
         story: {
           content: storyWithImage,
+          story_types: storyTypes,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }
