@@ -19,7 +19,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { BlurView } from 'expo-blur';
-import { getLocationDetails, incrementVisitCount } from '../services/supabase';
+import { 
+  getLocationDetails, 
+  incrementVisitCount,
+  getLocationCheckInStatus,
+  checkInToLocation,
+} from '../services/supabase';
 import { generateHistoricalStory, generateVoice } from '../services/ai';
 import { awardPoints, POINT_VALUES } from '../services/points';
 import { supabase } from '../services/supabase';
@@ -41,6 +46,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
   const [pointsAnimation, setPointsAnimation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [distance, setDistance] = useState(null);
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -63,6 +69,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
   useEffect(() => {
     fetchLocationDetails();
     getCurrentLocation();
+    checkLocationStatus();
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -92,6 +99,54 @@ const LocationDetailScreen = ({ route, navigation }) => {
       setDistance(dist);
     }
   }, [userLocation, location]);
+
+  const checkLocationStatus = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const checkedIn = await getLocationCheckInStatus(session.user.id, location.id);
+        setIsCheckedIn(checkedIn);
+      }
+    } catch (err) {
+      console.error('Error checking location status:', err);
+    }
+  };
+
+  const handleCheckIn = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        Alert.alert('Sign In Required', 'Please sign in to check in to locations.');
+        return;
+      }
+
+      // Try to check in with location verification
+      await checkInToLocation(session.user.id, location.id, userLocation);
+      
+      // If successful, award points and update UI
+      await incrementVisitCount(location.id);
+      await awardPoints(session.user.id, 'FIRST_VISIT', location.id, userLocation);
+      showPointsAnimation(POINT_VALUES.FIRST_VISIT);
+      setIsCheckedIn(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+    } catch (err) {
+      if (err.message === 'User not at location') {
+        // Still allow check-in but without points
+        try {
+          await checkInToLocation(session.user.id, location.id);
+          setIsCheckedIn(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch (checkInErr) {
+          console.error('Error during manual check-in:', checkInErr);
+          Alert.alert('Error', 'Failed to check in to location');
+        }
+      } else {
+        console.error('Error during check-in:', err);
+        Alert.alert('Error', 'Failed to check in to location');
+      }
+    }
+  };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth's radius in kilometers
@@ -541,7 +596,6 @@ const LocationDetailScreen = ({ route, navigation }) => {
         }}>
           {/* Map Section */}
           <View style={styles.mapContainer}>
-
             <MapView
               style={styles.map}
               initialRegion={{
@@ -693,6 +747,26 @@ const LocationDetailScreen = ({ route, navigation }) => {
 
       <BlurView intensity={80} tint="dark" style={styles.buttonContainer}>
         <View style={styles.buttonContent}>
+          {!isCheckedIn ? (
+            <TouchableOpacity
+              style={styles.checkInButton}
+              onPress={handleCheckIn}
+            >
+              <LinearGradient
+                colors={['#10b981', '#059669']}
+                style={styles.buttonGradient}
+              >
+                <MaterialIcons name="place" size={24} color="#ffffff" />
+                <Text style={styles.buttonText}>Check In</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <BlurView intensity={20} tint="dark" style={styles.checkedInBadge}>
+              <MaterialIcons name="check-circle" size={20} color="#10b981" />
+              <Text style={styles.checkedInText}>Checked In</Text>
+            </BlurView>
+          )}
+
           <TouchableOpacity
             style={styles.arButton}
             onPress={handleARView}

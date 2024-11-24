@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import env from '../config/env';
+import { isAtLocation } from './points';
 
 // Debug logging function
 const logDebug = (context, message, data = null) => {
@@ -817,6 +818,72 @@ export const getImageUrl = (path) => {
   return url;
 };
 
+// New check-in related functions
+export const getLocationCheckInStatus = async (userId, locationId) => {
+  try {
+    logDebug('CheckIns', 'Getting check-in status', { userId, locationId });
+    const { data, error } = await adminClient
+      .from('location_check_ins')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('location_id', locationId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // Not found error is ok
+      throw error;
+    }
+
+    return !!data; // Return true if check-in exists, false otherwise
+  } catch (error) {
+    logError('CheckIns', error, { userId, locationId });
+    return false;
+  }
+};
+
+export const checkInToLocation = async (userId, locationId, userLocation = null) => {
+  try {
+    logDebug('CheckIns', 'Checking in to location', { userId, locationId });
+
+    // If userLocation provided, verify user is at location
+    if (userLocation) {
+      const atLocation = await isAtLocation(
+        locationId,
+        userLocation.coords.latitude,
+        userLocation.coords.longitude
+      );
+
+      if (!atLocation) {
+        throw new Error('User not at location');
+      }
+    }
+
+    // Check if already checked in
+    const alreadyCheckedIn = await getLocationCheckInStatus(userId, locationId);
+    if (alreadyCheckedIn) {
+      logDebug('CheckIns', 'User already checked in', { userId, locationId });
+      return { alreadyCheckedIn: true };
+    }
+
+    // Create check-in record
+    const { error: checkInError } = await adminClient
+      .from('location_check_ins')
+      .insert([{
+        user_id: userId,
+        location_id: locationId,
+        checked_in_at: new Date().toISOString()
+      }]);
+
+    if (checkInError) throw checkInError;
+
+    logDebug('CheckIns', 'Check-in successful', { userId, locationId });
+    return { success: true };
+  } catch (error) {
+    logError('CheckIns', error, { userId, locationId });
+    throw error;
+  }
+};
+
+// Update the default export to include new functions
 export default {
   supabase,
   adminClient,
@@ -833,4 +900,6 @@ export default {
   getImageUrl,
   clearLocations,
   initializeLocations,
+  getLocationCheckInStatus,
+  checkInToLocation,
 };

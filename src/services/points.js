@@ -107,7 +107,13 @@ export const isAtLocation = async (locationId, userLat, userLon) => {
   try {
     const { data: location, error } = await adminClient
       .from('locations')
-      .select('latitude, longitude, ai_generated_stories')
+      .select(`
+        latitude,
+        longitude,
+        ai_generated_stories (
+          id
+        )
+      `)
       .eq('id', locationId)
       .single();
 
