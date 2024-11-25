@@ -27,7 +27,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STATUSBAR_HEIGHT = StatusBar.currentHeight || 0;
 const TOP_OFFSET = Platform.OS === 'ios' ? 44 : STATUSBAR_HEIGHT;
 
-// Match story types with the ones in the database
 const STORY_TYPES = [
   'music',
   'visualArt',
@@ -44,7 +43,6 @@ const STORY_TYPES = [
   'education'
 ];
 
-// Story type display names and icons
 const STORY_TYPE_INFO = {
   music: { label: 'Music', icon: 'music-note' },
   visualArt: { label: 'Visual Art', icon: 'palette' },
@@ -75,6 +73,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [currentInstruction, setCurrentInstruction] = useState(null);
   const [navigationInfo, setNavigationInfo] = useState(null);
+  const [mapRegion, setMapRegion] = useState(null);
 
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
@@ -391,6 +390,12 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
+  const onRegionChange = (region) => {
+    if (!isNavigating) {
+      setMapRegion(region);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -402,15 +407,22 @@ const TourGuideScreen = ({ navigation }) => {
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         } : null}
+        onRegionChange={onRegionChange}
         zoomEnabled={true}
-        zoomControlEnabled={true}
-        minZoomLevel={5}
-        maxZoomLevel={20}
+        scrollEnabled={true}
         pitchEnabled={true}
         rotateEnabled={true}
         showsUserLocation={true}
         showsMyLocationButton={true}
-      >
+        showsCompass={true}
+        loadingEnabled={true}
+        moveOnMarkerPress={true}
+        minZoomLevel={1}
+        maxZoomLevel={20}
+        zoomTapEnabled={true}
+        zoomControlEnabled={true}
+        gestureEnabled={true}
+        >
         {currentLocation && (
           <Marker
             coordinate={currentLocation}
@@ -483,7 +495,7 @@ const TourGuideScreen = ({ navigation }) => {
                 <TouchableOpacity 
                   onPress={clearSearch}
                   style={styles.clearButton}
-                >
+      >
                   <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
                 </TouchableOpacity>
               )}
