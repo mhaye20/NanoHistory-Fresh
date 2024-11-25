@@ -66,14 +66,14 @@ class TourGuideService {
 
       // Get route directions from Google Maps API
       const waypointsParam = routePoints.length > 0 ? 
-        `&waypoints=${routePoints.map(point => `${point.latitude},${point.longitude}`).join('|')}` : '';
+        `&waypoints=optimize:true|${routePoints.map(point => `${point.latitude},${point.longitude}`).join('|')}` : '';
 
       const directionsResponse = await fetch(
         `https://maps.googleapis.com/maps/api/directions/json?origin=${
           startLocation.latitude
         },${startLocation.longitude}&destination=${
           endLocation.latitude
-        },${endLocation.longitude}${waypointsParam}&mode=walking&units=metric&optimizeWaypoints=true&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
+        },${endLocation.longitude}${waypointsParam}&mode=walking&units=metric&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
       );
 
       const directionsData = await directionsResponse.json();
@@ -94,18 +94,7 @@ class TourGuideService {
           if (step.polyline) {
             // Decode and add the polyline points for this step
             const decodedPoints = this.decodePolyline(step.polyline.points);
-            
-            // Add points to create a continuous path
-            if (routeCoordinates.length === 0) {
-              routeCoordinates.push(...decodedPoints);
-            } else {
-              // Skip first point if it's the same as the last point of previous step
-              const startIndex = (
-                decodedPoints[0].latitude === routeCoordinates[routeCoordinates.length - 1].latitude &&
-                decodedPoints[0].longitude === routeCoordinates[routeCoordinates.length - 1].longitude
-              ) ? 1 : 0;
-              routeCoordinates.push(...decodedPoints.slice(startIndex));
-            }
+            routeCoordinates.push(...decodedPoints);
           }
           
           instructions.push({
@@ -115,6 +104,13 @@ class TourGuideService {
             maneuver: step.maneuver,
           });
         });
+      });
+
+      // Remove duplicate consecutive points
+      routeCoordinates = routeCoordinates.filter((point, index, array) => {
+        if (index === 0) return true;
+        const prevPoint = array[index - 1];
+        return !(point.latitude === prevPoint.latitude && point.longitude === prevPoint.longitude);
       });
 
       // Transform points to include story content and generate audio
@@ -324,7 +320,7 @@ class TourGuideService {
         } else if (nearbyWaypoint.story) {
           await this.playAudioGuide(
             `You are now approaching ${nearbyWaypoint.title}. ${nearbyWaypoint.story}`
-      );
+          );
         }
       }, 1000);
     }
