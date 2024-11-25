@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { tourGuideService } from '../services/tourGuide';
+import { supabase } from '../services/supabase';
 import env from '../config/env';
 import { debounce } from 'lodash';
 
@@ -64,6 +65,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [destination, setDestination] = useState('');
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [route, setRoute] = useState(null);
+  const [waypoints, setWaypoints] = useState([]); // New state for waypoints
   const [isLoading, setIsLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -109,6 +111,7 @@ const TourGuideScreen = ({ navigation }) => {
 
   useEffect(() => {
     initializeLocation();
+    fetchInitialWaypoints(); // New function to fetch waypoints on load
     return () => {
       if (isNavigating) {
         stopNavigation();
@@ -118,6 +121,37 @@ const TourGuideScreen = ({ navigation }) => {
       }
     };
   }, []);
+
+  const fetchInitialWaypoints = async () => {
+    try {
+      const { data: historicalPoints, error } = await supabase
+        .from('locations')
+        .select(`
+          *,
+          ai_generated_stories (
+            content,
+            story_types
+          )
+        `);
+
+      if (error) throw error;
+
+      // Transform points to include story content
+      const transformedPoints = historicalPoints.map(point => ({
+        id: point.id,
+        title: point.title,
+        description: point.description,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        story: point.ai_generated_stories?.[0]?.content,
+        story_types: point.ai_generated_stories?.[0]?.story_types || []
+      }));
+
+      setWaypoints(transformedPoints);
+    } catch (error) {
+      console.error('Error fetching waypoints:', error);
+    }
+  };
 
   const initializeLocation = async () => {
     try {
@@ -422,9 +456,9 @@ const TourGuideScreen = ({ navigation }) => {
               pinColor="#3b82f6"
             />
           )}
-          {route?.waypoints.map((point, index) => (
+          {waypoints.map((point, index) => (
             <Marker
-              key={index}
+              key={point.id || index}
               coordinate={{
                 latitude: point.latitude,
                 longitude: point.longitude,
