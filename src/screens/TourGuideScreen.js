@@ -402,6 +402,14 @@ const TourGuideScreen = ({ navigation }) => {
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         } : null}
+        zoomEnabled={true}
+        zoomControlEnabled={true}
+        minZoomLevel={5}
+        maxZoomLevel={20}
+        pitchEnabled={true}
+        rotateEnabled={true}
+        showsUserLocation={true}
+        showsMyLocationButton={true}
       >
         {currentLocation && (
           <Marker
@@ -429,11 +437,19 @@ const TourGuideScreen = ({ navigation }) => {
             pinColor="#ef4444"
           />
         )}
-        {route?.coordinates && (
+        {route?.waypoints && route.waypoints.length > 0 && (
           <Polyline
-            coordinates={route.coordinates}
+            coordinates={[
+              currentLocation,
+              ...route.waypoints.map(point => ({
+                latitude: point.latitude,
+                longitude: point.longitude,
+              })),
+              route.end
+            ].filter(Boolean)}
             strokeColor="#3b82f6"
             strokeWidth={3}
+            geodesic={true}
           />
         )}
       </MapView>
