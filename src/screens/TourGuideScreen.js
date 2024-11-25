@@ -73,7 +73,6 @@ const TourGuideScreen = ({ navigation }) => {
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [currentInstruction, setCurrentInstruction] = useState(null);
   const [navigationInfo, setNavigationInfo] = useState(null);
-  const [mapRegion, setMapRegion] = useState(null);
 
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
@@ -390,83 +389,77 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-  const onRegionChange = (region) => {
-    if (!isNavigating) {
-      setMapRegion(region);
-    }
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={currentLocation ? {
-          ...currentLocation,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        } : null}
-        onRegionChange={onRegionChange}
-        zoomEnabled={true}
-        scrollEnabled={true}
-        pitchEnabled={true}
-        rotateEnabled={true}
-        showsUserLocation={true}
-        showsMyLocationButton={true}
-        showsCompass={true}
-        loadingEnabled={true}
-        moveOnMarkerPress={true}
-        minZoomLevel={1}
-        maxZoomLevel={20}
-        zoomTapEnabled={true}
-        zoomControlEnabled={true}
-        gestureEnabled={true}
+      <View style={styles.mapContainer}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={currentLocation ? {
+            ...currentLocation,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
+          } : null}
+          zoomEnabled={true}
+          scrollEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
+          showsCompass={true}
+          loadingEnabled={true}
+          moveOnMarkerPress={true}
+          minZoomLevel={1}
+          maxZoomLevel={20}
+          zoomTapEnabled={true}
+          zoomControlEnabled={true}
         >
-        {currentLocation && (
-          <Marker
-            coordinate={currentLocation}
-            title="You are here"
-            pinColor="#3b82f6"
-          />
-        )}
-        {route?.waypoints.map((point, index) => (
-          <Marker
-            key={index}
-            coordinate={{
-              latitude: point.latitude,
-              longitude: point.longitude,
-            }}
-            title={point.title}
-            description={point.description}
-            pinColor="#10b981"
-          />
-        ))}
-        {route?.end && (
-          <Marker
-            coordinate={route.end}
-            title="Destination"
-            pinColor="#ef4444"
-          />
-        )}
-        {route?.waypoints && route.waypoints.length > 0 && (
-          <Polyline
-            coordinates={[
-              currentLocation,
-              ...route.waypoints.map(point => ({
+          {currentLocation && (
+            <Marker
+              coordinate={currentLocation}
+              title="You are here"
+              pinColor="#3b82f6"
+            />
+          )}
+          {route?.waypoints.map((point, index) => (
+            <Marker
+              key={index}
+              coordinate={{
                 latitude: point.latitude,
                 longitude: point.longitude,
-              })),
-              route.end
-            ].filter(Boolean)}
-            strokeColor="#3b82f6"
-            strokeWidth={3}
-            geodesic={true}
-          />
-        )}
-      </MapView>
+              }}
+              title={point.title}
+              description={point.description}
+              pinColor="#10b981"
+            />
+          ))}
+          {route?.end && (
+            <Marker
+              coordinate={route.end}
+              title="Destination"
+              pinColor="#ef4444"
+            />
+          )}
+          {route?.waypoints && route.waypoints.length > 0 && (
+            <Polyline
+              coordinates={[
+                currentLocation,
+                ...route.waypoints.map(point => ({
+                  latitude: point.latitude,
+                  longitude: point.longitude,
+                })),
+                route.end
+              ].filter(Boolean)}
+              strokeColor="#3b82f6"
+              strokeWidth={3}
+              geodesic={true}
+            />
+          )}
+        </MapView>
+      </View>
 
-      <SafeAreaView style={styles.overlay}>
+      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.searchContainer}>
           <BlurView intensity={80} tint="dark" style={styles.searchBlur}>
             <View style={styles.headerContainer}>
@@ -495,7 +488,7 @@ const TourGuideScreen = ({ navigation }) => {
                 <TouchableOpacity 
                   onPress={clearSearch}
                   style={styles.clearButton}
-      >
+                >
                   <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
                 </TouchableOpacity>
               )}
@@ -637,6 +630,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  mapContainer: {
+    flex: 1,
+    overflow: 'hidden',
+  },
   map: {
     flex: 1,
   },
@@ -646,6 +643,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    pointerEvents: 'box-none',
   },
   searchContainer: {
     marginTop: TOP_OFFSET,
