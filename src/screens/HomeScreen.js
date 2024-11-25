@@ -153,7 +153,7 @@ const HomeScreen = ({ navigation }) => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.secondaryButton}
+                  style={[styles.secondaryButton, { marginRight: 8 }]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     navigation.navigate('CreateStory');
@@ -163,6 +163,20 @@ const HomeScreen = ({ navigation }) => {
                   <BlurView intensity={30} tint="dark" style={styles.glassBackground}>
                     <MaterialIcons name="add-photo-alternate" size={24} color="#10b981" />
                     <Text style={styles.secondaryButtonText}>Share Story</Text>
+                  </BlurView>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    navigation.navigate('TourGuide');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <BlurView intensity={30} tint="dark" style={styles.glassBackground}>
+                    <MaterialIcons name="map" size={24} color="#f59e0b" />
+                    <Text style={styles.secondaryButtonText}>Tour Guide</Text>
                   </BlurView>
                 </TouchableOpacity>
               </View>
@@ -283,7 +297,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     letterSpacing: 0.5,
   },

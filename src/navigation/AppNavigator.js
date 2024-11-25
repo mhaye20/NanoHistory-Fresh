@@ -11,6 +11,7 @@ import ARViewScreen from '../screens/ARViewScreen';
 import AIGuideScreen from '../screens/AIGuideScreen';
 import CreateStoryScreen from '../screens/CreateStoryScreen';
 import AuthScreen from '../screens/AuthScreen';
+import TourGuideScreen from '../screens/TourGuideScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -36,7 +37,7 @@ const AppNavigator = () => {
         initialRouteName="Home"
         screenOptions={{
           ...screenOptions,
-          animation: 'slide_from_bottom', // Make all standard screens slide from bottom
+          animation: 'slide_from_bottom',
         }}
       >
         <Stack.Screen
@@ -102,6 +103,15 @@ const AppNavigator = () => {
           component={AIGuideScreen}
           options={{
             title: 'AI Historical Guide',
+            headerTransparent: true,
+            headerBlurEffect: 'dark',
+          }}
+        />
+        <Stack.Screen
+          name="TourGuide"
+          component={TourGuideScreen}
+          options={{
+            title: 'Historical Tour Guide',
             headerTransparent: true,
             headerBlurEffect: 'dark',
           }}
