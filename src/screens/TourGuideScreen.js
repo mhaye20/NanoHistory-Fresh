@@ -423,7 +423,7 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-  return (
+return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.mapContainer}>
@@ -475,16 +475,16 @@ const TourGuideScreen = ({ navigation }) => {
               pinColor="#ef4444"
             />
           )}
-          {route?.waypoints && route.waypoints.length > 0 && (
+          {route && (
             <Polyline
               coordinates={[
                 currentLocation,
-                ...route.waypoints.map(point => ({
+                ...(route.waypoints || []).map(point => ({
                   latitude: point.latitude,
                   longitude: point.longitude,
                 })),
                 route.end
-              ].filter(Boolean)}
+              ].filter(coord => coord && typeof coord.latitude === 'number' && typeof coord.longitude === 'number')}
               strokeColor="#3b82f6"
               strokeWidth={3}
               geodesic={true}

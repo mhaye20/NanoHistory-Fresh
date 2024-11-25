@@ -57,8 +57,8 @@ class TourGuideService {
           storyTypes.some(type => selectedTypes.includes(type));
       });
 
-      // Filter points along the route
-      const routePoints = this.filterPointsAlongRoute(
+      // Enhanced point selection along route
+      const routePoints = this.selectOptimalWaypoints(
         startLocation,
         endLocation,
         filteredPoints
@@ -83,7 +83,7 @@ class TourGuideService {
       }
 
       // Extract route coordinates and instructions from directions response
-      let routeCoordinates = [];
+      let routeCoordinates = [startLocation]; // Start with the start location
       const instructions = [];
       const waypointOrder = directionsData.routes[0].waypoint_order;
       
@@ -105,6 +105,9 @@ class TourGuideService {
           });
         });
       });
+
+      // Add end location to ensure complete path
+      routeCoordinates.push(endLocation);
 
       // Remove duplicate consecutive points
       routeCoordinates = routeCoordinates.filter((point, index, array) => {
@@ -146,12 +149,155 @@ class TourGuideService {
         totalDuration: directionsData.routes[0].legs.reduce((acc, leg) => acc + leg.duration.value, 0)
       };
 
+      console.log('Route coordinates count:', routeCoordinates.length);
+      console.log('First coordinate:', routeCoordinates[0]);
+      console.log('Last coordinate:', routeCoordinates[routeCoordinates.length - 1]);
+
       this.currentRoute = route;
       return route;
     } catch (error) {
       console.error('Error generating tour route:', error);
       throw error;
     }
+  }
+
+  selectOptimalWaypoints(start, end, points) {
+    // Calculate direct distance between start and end
+    const directDistance = this.calculateDistance(start, end);
+    
+    // Increased buffer distance for wider coverage
+    const bufferDistance = Math.max(0.5, directDistance * 0.3); // Min 500m, or 30% of direct distance
+    
+    // Get points within the enhanced corridor
+    const corridorPoints = points.filter(point => 
+      this.isPointInEnhancedCorridor(
+        { latitude: point.latitude, longitude: point.longitude },
+        start,
+        end,
+        bufferDistance
+      )
+    );
+
+    // Create segments along the route for better distribution
+    const numSegments = Math.max(4, Math.ceil(directDistance / 0.4)); // One segment every 400m
+    const segments = new Array(numSegments).fill().map((_, i) => {
+      const progress = i / (numSegments - 1);
+      return {
+        latitude: start.latitude + (end.latitude - start.latitude) * progress,
+        longitude: start.longitude + (end.longitude - start.longitude) * progress,
+        points: []
+      };
+    });
+
+    // Assign points to nearest segment
+    corridorPoints.forEach(point => {
+      let minDist = Infinity;
+      let bestSegment = 0;
+      
+      segments.forEach((segment, i) => {
+        const dist = this.calculateDistance(
+          { latitude: point.latitude, longitude: point.longitude },
+          segment
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          bestSegment = i;
+        }
+      });
+      
+      segments[bestSegment].points.push(point);
+    });
+
+    // Select best points from each segment
+    const selectedPoints = [];
+    segments.forEach(segment => {
+      if (segment.points.length > 0) {
+        // Score points in this segment
+        const scoredPoints = segment.points.map(point => ({
+          ...point,
+          score: this.calculatePointScore(
+            this.calculateDistance(start, point),
+            this.calculateDistance(end, point),
+            this.getDistanceFromLine(
+              { latitude: point.latitude, longitude: point.longitude },
+              start,
+              end
+            ),
+            directDistance,
+            point
+          )
+        }));
+
+        // Sort by score and take the best point(s)
+        scoredPoints.sort((a, b) => b.score - a.score);
+        selectedPoints.push(scoredPoints[0]);
+        
+        // If segment has multiple good points with similar scores, include them
+        for (let i = 1; i < scoredPoints.length && i < 2; i++) {
+          if (scoredPoints[i].score > scoredPoints[0].score * 0.8) {
+            selectedPoints.push(scoredPoints[i]);
+          }
+        }
+      }
+    });
+
+    // Ensure we have enough points but not too many
+    const maxPoints = Math.min(12, Math.max(6, Math.ceil(directDistance / 0.4)));
+    return selectedPoints.slice(0, maxPoints);
+  }
+
+  calculatePointScore(distanceFromStart, distanceFromEnd, distanceFromLine, directDistance, point) {
+    // Base score starts at 1
+    let score = 1;
+
+    // Favor points that create a natural progression (closer to middle of route)
+    const progressionScore = 1 - Math.abs(
+      (distanceFromStart / (distanceFromStart + distanceFromEnd)) - 0.5
+    );
+    score += progressionScore;
+
+    // Less aggressive penalty for distance from direct route
+    const deviationPenalty = Math.max(0.5, 1 - (distanceFromLine / (directDistance * 0.3)));
+    score *= deviationPenalty;
+
+    // Bonus for points with stories
+    if (point.ai_generated_stories?.length > 0) {
+      score *= 1.2;
+    }
+
+    return score;
+  }
+
+  isPointInEnhancedCorridor(point, start, end, bufferDistance) {
+    // Calculate point's distance from the route line
+    const distanceFromLine = this.getDistanceFromLine(point, start, end);
+    
+    // More lenient distance check
+    if (distanceFromLine > bufferDistance) {
+      return false;
+    }
+
+    // Calculate progression along route (0 to 1)
+    const progression = this.calculateProgressionAlongRoute(point, start, end);
+    
+    // More lenient progression check to allow some deviation
+    return progression >= -0.2 && progression <= 1.2;
+  }
+
+  calculateProgressionAlongRoute(point, start, end) {
+    const { latitude: x, longitude: y } = point;
+    const { latitude: x1, longitude: y1 } = start;
+    const { latitude: x2, longitude: y2 } = end;
+    
+    const A = x - x1;
+    const B = y - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+
+    return lenSq !== 0 ? dot / lenSq : -1;
   }
 
   // Decode Google Maps polyline encoding
@@ -190,39 +336,6 @@ class TourGuideService {
     return points;
   }
 
-  filterPointsAlongRoute(start, end, points) {
-    // Calculate route corridor
-    const corridor = this.calculateRouteCorridor(start, end);
-    
-    // Filter points within corridor
-    return points.filter(point => 
-      this.isPointInCorridor(
-        { latitude: point.latitude, longitude: point.longitude },
-        corridor
-      )
-    );
-  }
-
-  calculateRouteCorridor(start, end) {
-    // Create a buffer zone around the direct path
-    const bufferDistance = 0.5; // 500 meters
-    return {
-      start,
-      end,
-      bufferDistance
-    };
-  }
-
-  isPointInCorridor(point, corridor) {
-    // Check if point is within buffer distance of the route line
-    const distance = this.getDistanceFromLine(
-      point,
-      corridor.start,
-      corridor.end
-    );
-    return distance <= corridor.bufferDistance;
-  }
-
   getDistanceFromLine(point, lineStart, lineEnd) {
     // Calculate perpendicular distance from point to line
     const { latitude: x, longitude: y } = point;
@@ -257,6 +370,22 @@ class TourGuideService {
     const dy = y - yy;
 
     return Math.sqrt(dx * dx + dy * dy) * 111.32; // Convert to kilometers
+  }
+
+  calculateDistance(point1, point2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = this.deg2rad(point2.latitude - point1.latitude);
+    const dLon = this.deg2rad(point2.longitude - point1.longitude);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.deg2rad(point1.latitude)) * Math.cos(this.deg2rad(point2.latitude)) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  deg2rad(deg) {
+    return deg * (Math.PI/180);
   }
 
   async startNavigation() {
@@ -336,22 +465,6 @@ class TourGuideService {
       );
       return distance <= threshold;
     });
-  }
-
-  calculateDistance(point1, point2) {
-    const R = 6371; // Earth's radius in km
-    const dLat = this.deg2rad(point2.latitude - point1.latitude);
-    const dLon = this.deg2rad(point2.longitude - point1.longitude);
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(this.deg2rad(point1.latitude)) * Math.cos(this.deg2rad(point2.latitude)) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  }
-
-  deg2rad(deg) {
-    return deg * (Math.PI/180);
   }
 
   async playAudioGuide(text) {
