@@ -51,6 +51,18 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
     outputRange: [0.6, 1, 0.6],
   });
 
+  // Format story types for display
+  const getDisplayStoryTypes = () => {
+    if (!Array.isArray(location.story_types) || location.story_types.length === 0) {
+      return 'General History';
+    }
+    // Take first 2 story types and format them
+    const types = location.story_types.slice(0, 2).map(type => 
+      type.charAt(0).toUpperCase() + type.slice(1).replace(/([A-Z])/g, ' $1')
+    );
+    return types.join(' • ') + (location.story_types.length > 2 ? ' • ...' : '');
+  };
+
   return (
     <Animated.View
       style={[
@@ -73,7 +85,7 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
         />
         
         <BlurView intensity={50} tint="dark" style={styles.topLabelOverlay}>
-          <Text style={styles.topLabelText}>{location.period}</Text>
+          <Text style={styles.topLabelText}>{getDisplayStoryTypes()}</Text>
         </BlurView>
 
         <LinearGradient
