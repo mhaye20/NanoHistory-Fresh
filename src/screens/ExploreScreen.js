@@ -243,6 +243,8 @@ const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect
 
 const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
+  const [filteredLocations, setFilteredLocations] = useState([]); // New state for filtered results
+  const [allLocations, setAllLocations] = useState([]); // New state to store all locations
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState(route.params?.source === 'swipe' ? 'nearby' : 'all');
@@ -477,7 +479,32 @@ const ExploreScreen = ({ navigation, route }) => {
     }
   };
 
-const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
+  const applyFilters = useCallback((locations, storyType, period) => {
+    let filtered = [...locations];
+
+    // Apply period filter
+    if (period !== 'all') {
+      filtered = filtered.filter(loc => 
+        loc.period?.toLowerCase().includes(period.toLowerCase())
+      );
+    }
+
+    // Apply story type filter
+    if (storyType !== 'all') {
+      const normalizedSelectedType = storyType.toLowerCase().replace(/([A-Z])/g, '_$1');
+      filtered = filtered.filter(loc => {
+        if (!Array.isArray(loc.story_types)) return false;
+        const normalizedLocationTypes = loc.story_types.map(type => 
+          type.toLowerCase().replace(/([A-Z])/g, '_$1')
+        );
+        return normalizedLocationTypes.includes(normalizedSelectedType);
+      });
+    }
+
+    return filtered;
+  }, []);
+
+  const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
     setLoading(true);
     try {
       let locationData = null;
@@ -494,17 +521,6 @@ const fetchNearbyLocations = async (skipLocation = false, customCoords = null, f
 
       const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
 
-      console.log('[ExploreScreen] Fetching locations with params:', {
-        skipLocation,
-        customCoords,
-        filterOverride,
-        selectedFilter,
-        selectedPeriod,
-        selectedStoryType,
-        searchRadius,
-        currentStoryTypes: availableStoryTypes
-      });
-
       const result = await getNearbyLocations(
         locationData?.coords.latitude,
         locationData?.coords.longitude,
@@ -513,79 +529,43 @@ const fetchNearbyLocations = async (skipLocation = false, customCoords = null, f
       );
 
       if (result?.locations) {
-        console.log('[ExploreScreen] Got locations from API:', {
-          count: result.locations.length,
-          firstLocation: result.locations[0] ? {
-            id: result.locations[0].id,
-            title: result.locations[0].title,
-            story_types: result.locations[0].story_types
-          } : null,
-          allTypes: result.locations.map(loc => ({
-            id: loc.id,
-            types: loc.story_types
-          }))
-        });
+        // Parse story types for each location
+        const parsedLocations = result.locations.map(loc => ({
+          ...loc,
+          story_types: (() => {
+            try {
+              if (Array.isArray(loc.story_types)) {
+                return loc.story_types;
+              }
+              if (typeof loc.story_types === 'string') {
+                const parsed = JSON.parse(loc.story_types);
+                return Array.isArray(parsed) ? parsed : [];
+              }
+              return [];
+            } catch (err) {
+              console.error('[ExploreScreen] Error parsing story types:', err);
+              return [];
+            }
+          })()
+        }));
 
-        let filteredLocations = selectedPeriod === 'all' 
-          ? result.locations 
-          : result.locations.filter(loc => 
-              loc.period?.toLowerCase().includes(selectedPeriod.toLowerCase())
-            );
+        // Store all locations
+        setAllLocations(parsedLocations);
 
-        console.log('[ExploreScreen] After period filter:', {
-          beforeCount: result.locations.length,
-          afterCount: filteredLocations.length,
-          selectedPeriod
-        });
-        
-        if (selectedStoryType !== 'all') {
-          console.log('[ExploreScreen] Filtering by story type:', {
-            selectedType: selectedStoryType,
-            beforeCount: filteredLocations.length,
-            locationsWithTypes: filteredLocations.filter(loc => 
-              Array.isArray(loc.story_types) && loc.story_types.length > 0
-            ).length
-          });
-
-          filteredLocations = filteredLocations.filter(loc => 
-            Array.isArray(loc.story_types) && loc.story_types.includes(selectedStoryType)
-          );
-
-          console.log('[ExploreScreen] After story type filter:', {
-            afterCount: filteredLocations.length,
-            remainingTypes: filteredLocations.map(loc => ({
-              id: loc.id,
-              types: loc.story_types
-            }))
-          });
-        }
+        // Apply current filters
+        const filtered = applyFilters(parsedLocations, selectedStoryType, selectedPeriod);
+        setFilteredLocations(filtered);
+        setLocations(filtered);
 
         // Collect all unique story types
         const types = new Set(['all']);
-        filteredLocations.forEach(loc => {
+        parsedLocations.forEach(loc => {
           if (Array.isArray(loc.story_types)) {
             loc.story_types.forEach(type => types.add(type));
           }
         });
 
-        const availableTypes = Array.from(types);
-        console.log('[ExploreScreen] Available story types:', {
-          types: availableTypes,
-          count: availableTypes.length,
-          locationsWithTypes: filteredLocations.filter(loc => 
-            Array.isArray(loc.story_types) && loc.story_types.length > 0
-          ).length,
-          typeDistribution: availableTypes.reduce((acc, type) => {
-            if (type === 'all') return acc;
-            acc[type] = filteredLocations.filter(loc => 
-              Array.isArray(loc.story_types) && loc.story_types.includes(type)
-            ).length;
-            return acc;
-          }, {})
-        });
-
-        setAvailableStoryTypes(availableTypes);
-        setLocations(filteredLocations);
+        setAvailableStoryTypes(Array.from(types));
         setError(null);
       }
     } catch (err) {
@@ -593,6 +573,60 @@ const fetchNearbyLocations = async (skipLocation = false, customCoords = null, f
       setError('Failed to fetch locations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFilterSelect = (filterId, value) => {
+    console.log('[ExploreScreen] Filter selected:', {
+      filterId,
+      value,
+      previousValue: getSelectedValue(filterId)
+    });
+
+    switch (filterId) {
+      case 'sort':
+        setSelectedFilter(value);
+        if (currentCoords) {
+          fetchNearbyLocations(false, currentCoords, value);
+        } else {
+          fetchNearbyLocations(value === 'all', null, value);
+        }
+        break;
+      case 'period':
+        setSelectedPeriod(value);
+        const periodFiltered = applyFilters(allLocations, selectedStoryType, value);
+        setFilteredLocations(periodFiltered);
+        setLocations(periodFiltered);
+        break;
+      case 'type':
+        setSelectedStoryType(value);
+        const typeFiltered = applyFilters(allLocations, value, selectedPeriod);
+        setFilteredLocations(typeFiltered);
+        setLocations(typeFiltered);
+        break;
+    }
+  };
+
+  const handleLocationPress = useCallback((location) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate('LocationDetail', { location });
+  }, [navigation]);
+
+  const handleARPress = useCallback((location) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate('ARView', { location });
+  }, [navigation]);
+
+  const getSelectedValue = (filterId) => {
+    switch (filterId) {
+      case 'sort':
+        return selectedFilter;
+      case 'period':
+        return selectedPeriod;
+      case 'type':
+        return selectedStoryType;
+      default:
+        return null;
     }
   };
 
@@ -630,66 +664,6 @@ const fetchNearbyLocations = async (skipLocation = false, customCoords = null, f
         return [];
     }
   };
-
-const getSelectedValue = (filterId) => {
-    switch (filterId) {
-      case 'sort':
-        return selectedFilter;
-      case 'period':
-        return selectedPeriod;
-      case 'type':
-        return selectedStoryType;
-      default:
-        return null;
-    }
-  };
-
-const handleFilterSelect = (filterId, value) => {
-    console.log('[ExploreScreen] Filter selected:', {
-      filterId,
-      value,
-      previousValue: getSelectedValue(filterId)
-    });
-
-    switch (filterId) {
-      case 'sort':
-        setSelectedFilter(value);
-        if (currentCoords) {
-          fetchNearbyLocations(false, currentCoords, value);
-        } else {
-          fetchNearbyLocations(value === 'all', null, value);
-        }
-        break;
-      case 'period':
-        setSelectedPeriod(value);
-        fetchNearbyLocations(permissionStatus === 'denied');
-        break;
-      case 'type':
-        console.log('[ExploreScreen] Story type filter selected:', {
-          previousType: selectedStoryType,
-          newType: value,
-          availableTypes: availableStoryTypes,
-          currentLocations: locations.map(loc => ({
-            id: loc.id,
-            title: loc.title,
-            story_types: loc.story_types
-          }))
-        });
-        setSelectedStoryType(value);
-        fetchNearbyLocations(permissionStatus === 'denied');
-        break;
-    }
-  };
-
-  const handleLocationPress = useCallback((location) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate('LocationDetail', { location });
-  }, [navigation]);
-
-  const handleARPress = useCallback((location) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate('ARView', { location });
-  }, [navigation]);
 
   const getActiveFilters = () => {
     const active = [];
@@ -779,26 +753,26 @@ const handleFilterSelect = (filterId, value) => {
         )}
 
         <BlurView intensity={80} tint="dark" style={styles.header}>
-        <LinearGradient
-          colors={['rgba(251, 191, 36, 0.1)', 'rgba(251, 191, 36, 0.05)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.levelBanner}
-        >
-          <View style={styles.levelInfo}>
-            <View style={styles.medalContainer}>
-              <MaterialIcons name="military-tech" size={24} color="#fbbf24" />
+          <LinearGradient
+            colors={['rgba(251, 191, 36, 0.1)', 'rgba(251, 191, 36, 0.05)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.levelBanner}
+          >
+            <View style={styles.levelInfo}>
+              <View style={styles.medalContainer}>
+                <MaterialIcons name="military-tech" size={24} color="#fbbf24" />
+              </View>
+              <View style={styles.levelTextContainer}>
+                <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
+                <Text style={styles.levelSubtitle}>{userLevel?.title || 'Explorer'}</Text>
+              </View>
+              <View style={styles.pointsContainer}>
+                <Text style={styles.pointsValue}>{userPoints}</Text>
+                <Text style={styles.pointsLabel}>PTS</Text>
+              </View>
             </View>
-            <View style={styles.levelTextContainer}>
-              <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
-              <Text style={styles.levelSubtitle}>{userLevel?.title || 'Explorer'}</Text>
-            </View>
-            <View style={styles.pointsContainer}>
-              <Text style={styles.pointsValue}>{userPoints}</Text>
-              <Text style={styles.pointsLabel}>PTS</Text>
-            </View>
-          </View>
-        </LinearGradient>
+          </LinearGradient>
 
           <View style={styles.searchWrapper}>
             <LinearGradient
@@ -840,157 +814,157 @@ const handleFilterSelect = (filterId, value) => {
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
                   >
-                  {localSearchResults.length > 0 && (
-                    <View>
-                      <View style={styles.predictionSectionHeader}>
-                        <MaterialIcons name="history-edu" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        <Text style={styles.predictionSectionTitle}>Story Locations</Text>
+                    {localSearchResults.length > 0 && (
+                      <View>
+                        <View style={styles.predictionSectionHeader}>
+                          <MaterialIcons name="history-edu" size={18} color="rgba(255, 255, 255, 0.6)" />
+                          <Text style={styles.predictionSectionTitle}>Story Locations</Text>
+                        </View>
+                        {localSearchResults.map((location) => (
+                          <TouchableOpacity
+                            key={location.id}
+                            style={styles.predictionItem}
+                            onPress={() => handleLocalLocationSelect(location)}
+                          >
+                            <MaterialIcons name="auto-stories" size={18} color="#10b981" />
+                            <View style={styles.predictionTextContainer}>
+                              <Text style={styles.predictionMainText}>
+                                {location.title}
+                              </Text>
+                              <Text style={styles.predictionSecondaryText}>
+                                {typeof location.content === 'string' 
+                                  ? JSON.parse(location.content).story_location 
+                                  : location.content?.story_location}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
                       </View>
-                      {localSearchResults.map((location) => (
-                        <TouchableOpacity
-                          key={location.id}
-                          style={styles.predictionItem}
-                          onPress={() => handleLocalLocationSelect(location)}
-                        >
-                          <MaterialIcons name="auto-stories" size={18} color="#10b981" />
-                          <View style={styles.predictionTextContainer}>
-                            <Text style={styles.predictionMainText}>
-                              {location.title}
-                            </Text>
-                            <Text style={styles.predictionSecondaryText}>
-                              {typeof location.content === 'string' 
-                                ? JSON.parse(location.content).story_location 
-                                : location.content?.story_location}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
+                    )}
 
-                  {predictions.length > 0 && (
-                    <View>
-                      <View style={styles.predictionSectionHeader}>
-                        <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        <Text style={styles.predictionSectionTitle}>Places</Text>
-                      </View>
-                      {predictions.map((prediction) => (
-                        <TouchableOpacity
-                          key={prediction.place_id}
-                          style={styles.predictionItem}
-                          onPress={() => handleLocationSelect(prediction)}
-                        >
+                    {predictions.length > 0 && (
+                      <View>
+                        <View style={styles.predictionSectionHeader}>
                           <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
-                          <View style={styles.predictionTextContainer}>
-                            <Text style={styles.predictionMainText}>
-                              {prediction.structured_formatting.main_text}
-                            </Text>
-                            <Text style={styles.predictionSecondaryText}>
-                              {prediction.structured_formatting.secondary_text}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
+                          <Text style={styles.predictionSectionTitle}>Places</Text>
+                        </View>
+                        {predictions.map((prediction) => (
+                          <TouchableOpacity
+                            key={prediction.place_id}
+                            style={styles.predictionItem}
+                            onPress={() => handleLocationSelect(prediction)}
+                          >
+                            <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                            <View style={styles.predictionTextContainer}>
+                              <Text style={styles.predictionMainText}>
+                                {prediction.structured_formatting.main_text}
+                              </Text>
+                              <Text style={styles.predictionSecondaryText}>
+                                {prediction.structured_formatting.secondary_text}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
                   </ScrollView>
                 </BlurView>
               </View>
             )}
           </View>
 
-        <View style={styles.filterButtons}>
-          {filterButtons.map((filter) => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterButton,
-                activeFilter === filter.id && styles.filterButtonActive,
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setActiveFilter(filter.id);
-              }}
-            >
-              <LinearGradient
-                colors={activeFilter === filter.id ? 
-                  ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
-                  ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.filterButtonGradient}
+          <View style={styles.filterButtons}>
+            {filterButtons.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterButton,
+                  activeFilter === filter.id && styles.filterButtonActive,
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveFilter(filter.id);
+                }}
               >
-                <MaterialIcons
-                  name={filter.icon}
-                  size={20}
-                  color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
-                />
-                <Text style={[
-                  styles.filterButtonLabel,
-                  activeFilter === filter.id && styles.filterButtonLabelActive
-                ]}>
-                  {filter.label}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {getActiveFilters().length > 0 && (
-          <BlurView intensity={30} tint="dark" style={styles.activeFiltersContainer}>
-            {getActiveFilters().map((filter, index) => (
-              <Text key={index} style={styles.activeFilterText}>
-                {filter}
-                {index < getActiveFilters().length - 1 ? ' • ' : ''}
-              </Text>
+                <LinearGradient
+                  colors={activeFilter === filter.id ? 
+                    ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
+                    ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.filterButtonGradient}
+                >
+                  <MaterialIcons
+                    name={filter.icon}
+                    size={20}
+                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                  />
+                  <Text style={[
+                    styles.filterButtonLabel,
+                    activeFilter === filter.id && styles.filterButtonLabelActive
+                  ]}>
+                    {filter.label}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
             ))}
-          </BlurView>
-        )}
+          </View>
+
+          {getActiveFilters().length > 0 && (
+            <BlurView intensity={30} tint="dark" style={styles.activeFiltersContainer}>
+              {getActiveFilters().map((filter, index) => (
+                <Text key={index} style={styles.activeFilterText}>
+                  {filter}
+                  {index < getActiveFilters().length - 1 ? ' • ' : ''}
+                </Text>
+              ))}
+            </BlurView>
+          )}
         </BlurView>
 
-      <Animated.FlatList
-        data={locations}
-        renderItem={({ item, index }) => (
-          <LocationCard
-            location={item}
-            onPress={() => handleLocationPress(item)}
-            onARPress={() => handleARPress(item)}
-            index={index}
-            scrollX={scrollX}
-          />
-        )}
-        keyExtractor={(item) => item.id.toString()}
-        horizontal
-        pagingEnabled
-        snapToInterval={CARD_WIDTH + SPACING * 2}
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: true }
-        )}
-        scrollEventThrottle={16}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialIcons name="search-off" size={48} color="rgba(255, 255, 255, 0.6)" />
-            <Text style={styles.emptyText}>No locations found</Text>
-            <Text style={styles.emptySubtext}>Try a different filter or explore another area</Text>
-          </View>
-        }
-      />
-
-      {filterButtons.map((filter) => (
-        <FilterModal
-          key={filter.id}
-          visible={activeFilter === filter.id}
-          onClose={() => setActiveFilter(null)}
-          title={filter.label}
-          options={getFilterOptions(filter.id)}
-          selectedValue={getSelectedValue(filter.id)}
-          onSelect={(value) => handleFilterSelect(filter.id, value)}
+        <Animated.FlatList
+          data={filteredLocations}  // Changed from locations to filteredLocations
+          renderItem={({ item, index }) => (
+            <LocationCard
+              location={item}
+              onPress={() => handleLocationPress(item)}
+              onARPress={() => handleARPress(item)}
+              index={index}
+              scrollX={scrollX}
+            />
+          )}
+          keyExtractor={(item) => item.id.toString()}
+          horizontal
+          pagingEnabled
+          snapToInterval={CARD_WIDTH + SPACING * 2}
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
+          )}
+          scrollEventThrottle={16}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="search-off" size={48} color="rgba(255, 255, 255, 0.6)" />
+              <Text style={styles.emptyText}>No locations found</Text>
+              <Text style={styles.emptySubtext}>Try a different filter or explore another area</Text>
+            </View>
+          }
         />
-      ))}
+
+        {filterButtons.map((filter) => (
+          <FilterModal
+            key={filter.id}
+            visible={activeFilter === filter.id}
+            onClose={() => setActiveFilter(null)}
+            title={filter.label}
+            options={getFilterOptions(filter.id)}
+            selectedValue={getSelectedValue(filter.id)}
+            onSelect={(value) => handleFilterSelect(filter.id, value)}
+          />
+        ))}
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
@@ -1007,9 +981,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    // Removed overflow: 'hidden' to allow dropdown to be visible
   },
-
   levelBanner: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1074,8 +1046,8 @@ const styles = StyleSheet.create({
   },
   searchWrapper: {
     marginTop: 16,
-    zIndex: 2000, // Increased from 1000
-    elevation: 2000, // Increased from 1000
+    zIndex: 2000,
+    elevation: 2000,
     position: 'relative',
   },
   searchContainer: {
@@ -1103,8 +1075,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     marginTop: 4,
-    zIndex: 2000, // Increased from 9999
-    elevation: 2000, // Increased from 9999
+    zIndex: 2000,
+    elevation: 2000,
   },
   predictionsContainer: {
     borderRadius: 16,
@@ -1114,13 +1086,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Added for better visibility
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
   },
-
   predictionsScroll: {
     flexGrow: 0,
   },
-
   predictionSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
