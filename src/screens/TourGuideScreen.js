@@ -68,7 +68,7 @@ const STORY_TYPE_INFO = {
 const TourGuideScreen = ({ navigation }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [destination, setDestination] = useState('');
-  const [selectedTypes, setSelectedTypes] = useState(['all']); // Initialize with 'all'
+  const [selectedTypes, setSelectedTypes] = useState([]);  // Initialize with 'all'
   const [route, setRoute] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
   const [filteredWaypoints, setFilteredWaypoints] = useState([]);
@@ -855,46 +855,46 @@ const TourGuideScreen = ({ navigation }) => {
 
             {isSearchExpanded && (
               <>
-                <View style={styles.searchInputContainer}>
-                  <MaterialIcons 
-                    name="search" 
-                    size={22} 
-                    color={isNavigating ? "rgba(255, 255, 255, 0.2)" : (selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)")} 
-                  />
-                  <TextInput
-                    style={[
-                      styles.searchInput,
-                      (isNavigating || !selectedTypes.length) && styles.disabledInput
-                    ]}
-                    placeholder={
-                      isNavigating 
-                        ? "Stop navigation to search..." 
-                        : (selectedTypes.length ? "Enter destination..." : "Select a story type first")
-                    }
-                    placeholderTextColor={
-                      isNavigating 
-                        ? "rgba(255, 255, 255, 0.2)" 
-                        : (selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)")
-                    }
-                    value={destination}
-                    onFocus={expandSearchBar}
-                    onChangeText={(text) => {
-                      if (!isNavigating && selectedTypes.length) {
-                        setDestination(text);
-                        fetchPlacePredictions(text);
-                      }
-                    }}
-                    editable={!isNavigating && selectedTypes.length > 0}
-                  />
-                  {destination.length > 0 && !isNavigating && selectedTypes.length > 0 && (
-                    <TouchableOpacity 
-                      onPress={clearSearch}
-                      style={styles.clearButton}
-                    >
-                      <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+      <View style={styles.searchInputContainer}>
+        <MaterialIcons 
+          name="search" 
+          size={22} 
+          color={isNavigating ? "rgba(255, 255, 255, 0.2)" : (selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)")} 
+        />
+        <TextInput
+          style={[
+            styles.searchInput,
+            (isNavigating || !selectedTypes.length) && styles.disabledInput
+          ]}
+          placeholder={
+            isNavigating 
+              ? "Stop navigation to search..." 
+              : (selectedTypes.length ? "Enter destination..." : "Select a story type first")
+          }
+          placeholderTextColor={
+            isNavigating 
+              ? "rgba(255, 255, 255, 0.2)" 
+              : (selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)")
+          }
+          value={destination}
+          onFocus={expandSearchBar}
+          onChangeText={(text) => {
+            if (!isNavigating && selectedTypes.length) {
+              setDestination(text);
+              fetchPlacePredictions(text);
+            }
+          }}
+          editable={!isNavigating && selectedTypes.length > 0}
+        />
+        {destination.length > 0 && !isNavigating && selectedTypes.length > 0 && (
+          <TouchableOpacity 
+            onPress={clearSearch}
+            style={styles.clearButton}
+          >
+            <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+          </TouchableOpacity>
+        )}
+      </View>
 
                 {error && (
                   <View style={styles.errorContainer}>
@@ -1051,7 +1051,6 @@ const TourGuideScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  // Previous styles remain the same...
   
   disabledTypeButton: {
     opacity: 0.5,
