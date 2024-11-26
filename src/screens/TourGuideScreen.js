@@ -31,7 +31,7 @@ const STATUSBAR_HEIGHT = StatusBar.currentHeight || 0;
 const TOP_OFFSET = Platform.OS === 'ios' ? 44 : STATUSBAR_HEIGHT;
 
 const STORY_TYPES = [
-  'all', // Add "all" as first option
+  'all',
   'music',
   'visualArt',
   'performingArt',
@@ -48,7 +48,7 @@ const STORY_TYPES = [
 ];
 
 const STORY_TYPE_INFO = {
-  all: { label: 'All Stories', icon: 'apps' }, // Add All Stories type info
+  all: { label: 'All Stories', icon: 'apps' },
   music: { label: 'Music', icon: 'music-note' },
   visualArt: { label: 'Visual Art', icon: 'palette' },
   performingArt: { label: 'Performing Arts', icon: 'theater-comedy' },
@@ -70,7 +70,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [route, setRoute] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
-  const [filteredWaypoints, setFilteredWaypoints] = useState([]); // New state for filtered waypoints
+  const [filteredWaypoints, setFilteredWaypoints] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -86,6 +86,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [isHeadTrackingEnabled, setIsHeadTrackingEnabled] = useState(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(true);
   const searchBarHeight = useRef(new Animated.Value(1)).current;
+  const [isInitialLocationSet, setIsInitialLocationSet] = useState(false);
 
   const toggleSearchBar = () => {
     const toValue = isSearchExpanded ? 0 : 1;
@@ -108,7 +109,52 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-  // Modify fetchInitialWaypoints to properly handle story types
+  const initializeLocation = async () => {
+    try {
+      // First try to load cached location
+      const cachedLocation = await tourGuideService.loadCachedLocation();
+      if (cachedLocation && !isInitialLocationSet) {
+        setCurrentLocation({
+          latitude: cachedLocation.latitude,
+          longitude: cachedLocation.longitude,
+        });
+        setIsInitialLocationSet(true);
+      }
+
+      // Request permissions and get current location
+      await tourGuideService.requestLocationPermissions();
+      const location = await tourGuideService.getCurrentLocation();
+      
+      // Update with fresh location
+      if (location) {
+        setCurrentLocation({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+        setIsInitialLocationSet(true);
+
+        // Start watching for location updates with lower accuracy for better performance
+        const subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 10,
+            timeInterval: 5000
+          },
+          (newLocation) => {
+            setCurrentLocation({
+              latitude: newLocation.coords.latitude,
+              longitude: newLocation.coords.longitude,
+            });
+          }
+        );
+        setLocationSubscription(subscription);
+      }
+    } catch (error) {
+      console.error('Location initialization error:', error);
+      Alert.alert('Error', 'Unable to get your location. Please enable location services.');
+    }
+  };
+
   const fetchInitialWaypoints = async () => {
     try {
       // First get all ai_generated_stories to ensure we have the story types
@@ -184,7 +230,6 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-  // Modify applyFilters to match ExploreScreen's approach
   const applyFilters = useCallback((points, selectedTypes) => {
     if (!selectedTypes.length) return []; // Return empty array if no types selected
     
@@ -233,7 +278,6 @@ const TourGuideScreen = ({ navigation }) => {
     return filtered;
   }, []);
 
-  // Modify toggleStoryType to handle exclusive 'all' selection
   const toggleStoryType = (type) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTypes((prev) => {
@@ -259,7 +303,6 @@ const TourGuideScreen = ({ navigation }) => {
     });
   };
 
-  // Update useEffect to handle initial filtering
   useEffect(() => {
     const setup = async () => {
       try {
@@ -340,20 +383,6 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-
-  const initializeLocation = async () => {
-    try {
-      await tourGuideService.requestLocationPermissions();
-      const location = await tourGuideService.getCurrentLocation();
-      setCurrentLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Unable to get your location. Please enable location services.');
-    }
-  };
-
   const fetchPlacePredictions = useCallback(
     debounce(async (input) => {
       if (!input.trim()) {
@@ -401,56 +430,55 @@ const TourGuideScreen = ({ navigation }) => {
     []
   );
 
-const handleLocationSelect = async (prediction) => {
-  try {
-    if (!prediction?.geometry?.location) {
-      throw new Error('Invalid location data');
+  const handleLocationSelect = async (prediction) => {
+    try {
+      if (!prediction?.geometry?.location) {
+        throw new Error('Invalid location data');
+      }
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setIsLoading(true);
+      setShowPredictions(false);
+      setDestination(prediction.description || '');
+
+      const { lat, lng } = prediction.geometry.location;
+      const destinationLocation = {
+        latitude: lat,
+        longitude: lng
+      };
+
+      if (!currentLocation) {
+        throw new Error('Current location not available');
+      }
+
+      // Generate the route
+      const newRoute = await tourGuideService.generateTourRoute(
+        currentLocation,
+        destinationLocation,
+        selectedTypes.length > 0 ? selectedTypes : ['all']
+      );
+
+      if (!newRoute?.coordinates?.length) {
+        throw new Error('Failed to generate route coordinates');
+      }
+
+      // Set the route immediately
+      setRoute(newRoute);
+
+      // Fit the map to show the entire route
+      if (mapRef.current) {
+        mapRef.current.fitToCoordinates(newRoute.coordinates, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: true,
+        });
+      }
+    } catch (error) {
+      console.error('Route error:', error);
+      Alert.alert('Error', error.message || 'Failed to generate tour route');
+    } finally {
+      setIsLoading(false);
     }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsLoading(true);
-    setShowPredictions(false);
-    setDestination(prediction.description || '');
-
-    const { lat, lng } = prediction.geometry.location;
-    const destinationLocation = {
-      latitude: lat,
-      longitude: lng
-    };
-
-    if (!currentLocation) {
-      throw new Error('Current location not available');
-    }
-
-    // Generate the route
-    const newRoute = await tourGuideService.generateTourRoute(
-      currentLocation,
-      destinationLocation,
-      selectedTypes.length > 0 ? selectedTypes : ['all']
-    );
-
-    if (!newRoute?.coordinates?.length) {
-      throw new Error('Failed to generate route coordinates');
-    }
-
-    // Set the route immediately
-    setRoute(newRoute);
-
-    // Fit the map to show the entire route
-    if (mapRef.current) {
-      mapRef.current.fitToCoordinates(newRoute.coordinates, {
-        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-        animated: true,
-      });
-    }
-  } catch (error) {
-    console.error('Route error:', error);
-    Alert.alert('Error', error.message || 'Failed to generate tour route');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+  };
 
   const startLocationTracking = async () => {
     try {
@@ -632,7 +660,7 @@ const handleLocationSelect = async (prediction) => {
       <View style={styles.mapContainer}>
         {currentLocation ? (
           <>
-      <MapView
+            <MapView
               ref={mapRef}
               style={styles.map}
               initialRegion={{
@@ -680,26 +708,26 @@ const handleLocationSelect = async (prediction) => {
                   });
                 }
               }}
-      >
-        {currentLocation && (
-          <Marker
-            coordinate={currentLocation}
-            title="You are here"
-            pinColor="#3b82f6"
-          />
-        )}
-        {filteredWaypoints.map((point, index) => ( // Use filteredWaypoints instead of waypoints
-          <Marker
-            key={point.id || index}
-            coordinate={{
-              latitude: point.latitude,
-              longitude: point.longitude,
-            }}
-            title={point.title}
-            description={point.description}
-            pinColor="#10b981"
-          />
-        ))}
+            >
+              {currentLocation && (
+                <Marker
+                  coordinate={currentLocation}
+                  title="You are here"
+                  pinColor="#3b82f6"
+                />
+              )}
+              {filteredWaypoints.map((point, index) => (
+                <Marker
+                  key={point.id || index}
+                  coordinate={{
+                    latitude: point.latitude,
+                    longitude: point.longitude,
+                  }}
+                  title={point.title}
+                  description={point.description}
+                  pinColor="#10b981"
+                />
+              ))}
               {route?.end && (
                 <Marker
                   coordinate={route.end}
@@ -720,7 +748,7 @@ const handleLocationSelect = async (prediction) => {
                   geodesic={true}
                 />
               )}
-      </MapView>
+            </MapView>
 
             {/* Compass indicator */}
             {isNavigating && isHeadTrackingEnabled && (
@@ -761,7 +789,6 @@ const handleLocationSelect = async (prediction) => {
           ]}
         >
           <BlurView intensity={80} tint="dark" style={styles.searchBlur}>
-
             <View style={[
               styles.headerContainer,
               { marginBottom: isSearchExpanded ? 12 : 0 }
@@ -781,34 +808,34 @@ const handleLocationSelect = async (prediction) => {
 
             {isSearchExpanded && (
               <>
-      <View style={styles.searchInputContainer}>
-        <MaterialIcons name="search" size={22} color={selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)"} />
-        <TextInput
-          style={[
-            styles.searchInput,
-            !selectedTypes.length && styles.disabledInput
-          ]}
-          placeholder={selectedTypes.length ? "Enter destination..." : "Select a story type first"}
-          placeholderTextColor={selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)"}
-          value={destination}
-          onFocus={expandSearchBar}
-          onChangeText={(text) => {
-            if (selectedTypes.length) {
-              setDestination(text);
-              fetchPlacePredictions(text);
-            }
-          }}
-          editable={selectedTypes.length > 0}
-        />
-        {destination.length > 0 && selectedTypes.length > 0 && (
-          <TouchableOpacity 
-            onPress={clearSearch}
-            style={styles.clearButton}
-          >
-            <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
-          </TouchableOpacity>
-        )}
-      </View>
+                <View style={styles.searchInputContainer}>
+                  <MaterialIcons name="search" size={22} color={selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)"} />
+                  <TextInput
+                    style={[
+                      styles.searchInput,
+                      !selectedTypes.length && styles.disabledInput
+                    ]}
+                    placeholder={selectedTypes.length ? "Enter destination..." : "Select a story type first"}
+                    placeholderTextColor={selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)"}
+                    value={destination}
+                    onFocus={expandSearchBar}
+                    onChangeText={(text) => {
+                      if (selectedTypes.length) {
+                        setDestination(text);
+                        fetchPlacePredictions(text);
+                      }
+                    }}
+                    editable={selectedTypes.length > 0}
+                  />
+                  {destination.length > 0 && selectedTypes.length > 0 && (
+                    <TouchableOpacity 
+                      onPress={clearSearch}
+                      style={styles.clearButton}
+                    >
+                      <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+                    </TouchableOpacity>
+                  )}
+                </View>
 
                 {error && (
                   <View style={styles.errorContainer}>

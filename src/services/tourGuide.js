@@ -1,8 +1,11 @@
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import env from '../config/env';
 import { generateVoice } from './ai';
+
+const LOCATION_CACHE_KEY = '@tour_guide_last_location';
 
 class TourGuideService {
   constructor() {
@@ -12,6 +15,7 @@ class TourGuideService {
     this.isNavigating = false;
     this.lastAnnouncedWaypoint = null;
     this.announcementTimeout = null;
+    this.lastKnownLocation = null;
   }
 
   async requestLocationPermissions() {
@@ -21,15 +25,88 @@ class TourGuideService {
     }
   }
 
+  async loadCachedLocation() {
+    try {
+      const cachedLocation = await AsyncStorage.getItem(LOCATION_CACHE_KEY);
+      if (cachedLocation) {
+        this.lastKnownLocation = JSON.parse(cachedLocation);
+        return this.lastKnownLocation;
+      }
+    } catch (error) {
+      console.warn('Error loading cached location:', error);
+    }
+    return null;
+  }
+
+  async saveCachedLocation(location) {
+    try {
+      await AsyncStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        timestamp: location.timestamp
+      }));
+    } catch (error) {
+      console.warn('Error saving cached location:', error);
+    }
+  }
+
   async getCurrentLocation() {
     try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High
+      // First try to get a quick fix with low accuracy
+      const quickLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Low,
+        maximumAge: 10000 // Accept locations up to 10 seconds old
       });
-      return location;
-    } catch (error) {
-      console.error('Error getting location:', error);
-      throw error;
+
+      // Save this quick location
+      if (quickLocation) {
+        this.lastKnownLocation = {
+          latitude: quickLocation.coords.latitude,
+          longitude: quickLocation.coords.longitude
+        };
+        await this.saveCachedLocation(quickLocation);
+      }
+
+      // Start getting a more accurate location in the background
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      }).then(accurateLocation => {
+        this.lastKnownLocation = {
+          latitude: accurateLocation.coords.latitude,
+          longitude: accurateLocation.coords.longitude
+        };
+        this.saveCachedLocation(accurateLocation);
+      }).catch(error => {
+        console.warn('Error getting accurate location:', error);
+      });
+
+      // Return the quick location immediately
+      return quickLocation;
+    } catch (quickError) {
+      console.warn('Error getting quick location:', quickError);
+      
+      // If quick location fails, try to use cached location
+      const cachedLocation = await this.loadCachedLocation();
+      if (cachedLocation) {
+        return {
+          coords: {
+            latitude: cachedLocation.latitude,
+            longitude: cachedLocation.longitude
+          },
+          timestamp: cachedLocation.timestamp
+        };
+      }
+
+      // If all else fails, try one last time with high accuracy
+      try {
+        const fallbackLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High
+        });
+        return fallbackLocation;
+      } catch (fallbackError) {
+        console.error('Error getting fallback location:', fallbackError);
+        throw fallbackError;
+      }
     }
   }
 
@@ -219,7 +296,6 @@ class TourGuideService {
 
       // Transform points to include story content and generate audio
       const orderedRoutePoints = waypointOrder.map(index => routePoints[index]);
-      
 
       // Generate route with waypoints, path, and instructions
       const route = {
