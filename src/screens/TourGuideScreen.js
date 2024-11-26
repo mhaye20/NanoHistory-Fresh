@@ -11,6 +11,7 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -78,6 +79,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [headingSubscription, setHeadingSubscription] = useState(null);
   const [currentHeading, setCurrentHeading] = useState(0);
   const [hasCompassPermission, setHasCompassPermission] = useState(false);
+  const [isHeadTrackingEnabled, setIsHeadTrackingEnabled] = useState(false);
 
   useEffect(() => {
     const setup = async () => {
@@ -315,7 +317,6 @@ const TourGuideScreen = ({ navigation }) => {
           timeInterval: 1000,
         },
         (location) => {
-          console.log('Location update:', location.coords);
           setCurrentLocation({
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
@@ -328,7 +329,7 @@ const TourGuideScreen = ({ navigation }) => {
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
               },
-              pitch: 60,
+              pitch: isHeadTrackingEnabled ? 60 : 0,
               zoom: 18,
               duration: 1000,
             });
@@ -337,25 +338,67 @@ const TourGuideScreen = ({ navigation }) => {
       );
       setLocationSubscription(locSubscription);
 
-      // Start compass tracking if permission granted
-      if (hasCompassPermission) {
-        const headSubscription = await Location.watchHeadingAsync((heading) => {
-          console.log('Heading update:', heading.trueHeading);
-          setCurrentHeading(heading.trueHeading);
-          
-          // Update map bearing when heading changes
-          if (mapRef.current && isNavigating) {
-            mapRef.current.animateCamera({
-              bearing: heading.trueHeading,
-              duration: 500,
-            });
-          }
-        });
-        setHeadingSubscription(headSubscription);
+      // Start compass tracking if head tracking is enabled
+      if (isHeadTrackingEnabled && hasCompassPermission) {
+        startHeadingTracking();
       }
     } catch (error) {
-      console.error('Error starting location/heading tracking:', error);
+      console.error('Error starting location tracking:', error);
       Alert.alert('Error', 'Failed to start location tracking');
+    }
+  };
+
+  const startHeadingTracking = async () => {
+    try {
+      if (headingSubscription) {
+        await headingSubscription.remove();
+      }
+
+      const headSubscription = await Location.watchHeadingAsync((heading) => {
+        setCurrentHeading(heading.trueHeading);
+        
+        // Update map bearing when heading changes
+        if (mapRef.current && isNavigating && isHeadTrackingEnabled) {
+          mapRef.current.animateCamera({
+            bearing: heading.trueHeading,
+            duration: 500,
+          });
+        }
+      });
+      setHeadingSubscription(headSubscription);
+    } catch (error) {
+      console.error('Error starting heading tracking:', error);
+    }
+  };
+
+  const stopHeadingTracking = async () => {
+    try {
+      if (headingSubscription) {
+        await headingSubscription.remove();
+        setHeadingSubscription(null);
+      }
+
+      // Reset map orientation when head tracking is disabled
+      if (mapRef.current) {
+        mapRef.current.animateCamera({
+          center: currentLocation,
+          pitch: 0,
+          bearing: 0,
+          zoom: 18,
+          duration: 500,
+        });
+      }
+    } catch (error) {
+      console.error('Error stopping heading tracking:', error);
+    }
+  };
+
+  const toggleHeadTracking = async (enabled) => {
+    setIsHeadTrackingEnabled(enabled);
+    if (enabled) {
+      await startHeadingTracking();
+    } else {
+      await stopHeadingTracking();
     }
   };
 
@@ -378,9 +421,10 @@ const TourGuideScreen = ({ navigation }) => {
       if (mapRef.current && currentLocation) {
         mapRef.current.animateCamera({
           center: currentLocation,
-          heading: currentHeading,
-          pitch: 60,
+          heading: isHeadTrackingEnabled ? currentHeading : 0,
+          pitch: isHeadTrackingEnabled ? 60 : 0,
           zoom: 17,
+          duration: 500,
         });
       }
     } catch (error) {
@@ -396,15 +440,16 @@ const TourGuideScreen = ({ navigation }) => {
       setCurrentInstruction(null);
       setNavigationInfo(null);
 
+      // Stop all tracking
       if (locationSubscription) {
         locationSubscription.remove();
         setLocationSubscription(null);
       }
       if (headingSubscription) {
-        headingSubscription.remove();
-        setHeadingSubscription(null);
+        await stopHeadingTracking();
       }
 
+      // Reset map view
       if (mapRef.current && route) {
         mapRef.current.fitToCoordinates([
           currentLocation,
@@ -450,21 +495,21 @@ const TourGuideScreen = ({ navigation }) => {
                 latitudeDelta: 0.0922,
                 longitudeDelta: 0.0421,
               }}
-              zoomEnabled={true}
-              scrollEnabled={!isNavigating}
-              pitchEnabled={true}
-              rotateEnabled={true}
+              zoomEnabled={!isHeadTrackingEnabled || !isNavigating}
+              scrollEnabled={!isHeadTrackingEnabled || !isNavigating}
+              pitchEnabled={!isHeadTrackingEnabled || !isNavigating}
+              rotateEnabled={!isHeadTrackingEnabled || !isNavigating}
               showsUserLocation={true}
               showsMyLocationButton={true}
-              showsCompass={true}
+              showsCompass={!isHeadTrackingEnabled}
               loadingEnabled={true}
               moveOnMarkerPress={true}
               minZoomLevel={1}
               maxZoomLevel={20}
-              zoomTapEnabled={true}
+              zoomTapEnabled={!isHeadTrackingEnabled || !isNavigating}
               zoomControlEnabled={true}
-              followsUserLocation={isNavigating}
-              followsUserHeading={isNavigating}
+              followsUserLocation={isNavigating && isHeadTrackingEnabled}
+              followsUserHeading={isNavigating && isHeadTrackingEnabled}
               userLocationAnnotationTitle="You are here"
               userLocationCalloutEnabled={true}
               onError={(error) => {
@@ -473,13 +518,13 @@ const TourGuideScreen = ({ navigation }) => {
               }}
               camera={{
                 center: currentLocation,
-                pitch: 60,
-                heading: currentHeading,
+                pitch: isHeadTrackingEnabled ? 60 : 0,
+                heading: isHeadTrackingEnabled ? currentHeading : 0,
                 altitude: 1000,
                 zoom: 17,
               }}
               onUserLocationChange={(event) => {
-                if (isNavigating && event.nativeEvent.coordinate) {
+                if (isNavigating && isHeadTrackingEnabled && event.nativeEvent.coordinate) {
                   const { latitude, longitude } = event.nativeEvent.coordinate;
                   mapRef.current?.animateCamera({
                     center: { latitude, longitude },
@@ -530,10 +575,10 @@ const TourGuideScreen = ({ navigation }) => {
                   geodesic={true}
                 />
               )}
-            </MapView>
+      </MapView>
 
             {/* Compass indicator */}
-            {isNavigating && (
+            {isNavigating && isHeadTrackingEnabled && (
               <View style={styles.compassContainer}>
                 <MaterialIcons 
                   name="navigation" 
@@ -703,6 +748,20 @@ const TourGuideScreen = ({ navigation }) => {
                 </View>
               </View>
             )}
+
+      {isNavigating && (
+        <View style={styles.trackingModeContainer}>
+          <Text style={styles.trackingModeText}>
+            Head Tracking Navigation
+          </Text>
+          <Switch
+            value={isHeadTrackingEnabled}
+            onValueChange={toggleHeadTracking}
+            trackColor={{ false: "#767577", true: "#81b0ff" }}
+            thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
+          />
+        </View>
+      )}
 
             <TouchableOpacity
               style={[styles.navigationButton, isNavigating && styles.stopButton]}
