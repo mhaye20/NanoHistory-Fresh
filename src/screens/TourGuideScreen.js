@@ -89,6 +89,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [isSearchExpanded, setIsSearchExpanded] = useState(true);
   const searchBarHeight = useRef(new Animated.Value(1)).current;
   const [isInitialLocationSet, setIsInitialLocationSet] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
 
   const toggleSearchBar = () => {
     const toValue = isSearchExpanded ? 0 : 1;
@@ -246,13 +247,10 @@ const TourGuideScreen = ({ navigation }) => {
 
       console.log('Transformed points:', transformedPoints.length);
 
-      // Set waypoints first
+      // Set waypoints
       setWaypoints(transformedPoints);
-      
-      // Then set filtered waypoints to all points since 'all' is selected by default
-      setFilteredWaypoints(transformedPoints);
 
-      console.log('Set waypoints and filtered waypoints');
+      console.log('Set waypoints');
 
     } catch (error) {
       console.error('Error fetching waypoints:', error);
@@ -312,12 +310,9 @@ const TourGuideScreen = ({ navigation }) => {
       // If 'all' is being selected and wasn't previously selected
       if (!selectedTypes.includes('all')) {
         setSelectedTypes(['all']);
-        // Simply set filtered waypoints to all waypoints
-        setFilteredWaypoints(waypoints);
       } else {
         // If 'all' was already selected, just deselect it
         setSelectedTypes([]);
-        setFilteredWaypoints([]);
       }
     } else {
       setSelectedTypes((prev) => {
@@ -332,13 +327,8 @@ const TourGuideScreen = ({ navigation }) => {
           updatedTypes = [...updatedTypes, type];
         }
         
-        // Update filtered waypoints when types change
-        const filtered = applyFilters(waypoints, updatedTypes);
-        setFilteredWaypoints(filtered);
-        
         console.log('Story type toggled:', type);
         console.log('Updated types:', updatedTypes);
-        console.log('Filtered waypoints count:', filtered.length);
         
         return updatedTypes;
       });
@@ -379,12 +369,15 @@ const TourGuideScreen = ({ navigation }) => {
     }, [])
   );
 
-  // Add effect to handle initial filtering
+  // Add effect to handle filtering
   useEffect(() => {
     if (waypoints.length > 0) {
-      console.log('Waypoints updated, applying initial filter');
+      console.log('Applying filter with selectedTypes:', selectedTypes);
       const filtered = applyFilters(waypoints, selectedTypes);
+      console.log('Setting filtered waypoints:', filtered.length);
       setFilteredWaypoints(filtered);
+      // Force MapView to re-render when filtered waypoints change
+      setMapKey(prev => prev + 1);
     }
   }, [waypoints, selectedTypes, applyFilters]);
 
@@ -716,6 +709,7 @@ const TourGuideScreen = ({ navigation }) => {
         {currentLocation ? (
           <>
             <MapView
+              key={mapKey} // Add this key prop
               ref={mapRef}
               style={styles.map}
               initialRegion={{
@@ -812,7 +806,6 @@ const TourGuideScreen = ({ navigation }) => {
               </View>
             )}
 
-            {/* [Rest of the components remain exactly the same] */}
           </>
         ) : (
           <View style={styles.loadingContainer}>

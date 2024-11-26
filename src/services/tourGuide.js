@@ -164,7 +164,7 @@ class TourGuideService {
       });
 
       // Filter points by story types
-      const filteredPoints = transformedPoints.filter(location => {
+      const filteredPoints = selectedTypes.includes('all') ? transformedPoints : transformedPoints.filter(location => {
         if (!Array.isArray(location.story_types)) return false;
 
         // Convert camelCase to snake_case for comparison
@@ -183,10 +183,9 @@ class TourGuideService {
           normalizedSelectedTypes
         });
 
-        const matches = selectedTypes.includes('all') || 
-          normalizedSelectedTypes.some(selectedType => 
-            normalizedPointTypes.includes(selectedType)
-          );
+        const matches = normalizedSelectedTypes.some(selectedType => 
+          normalizedPointTypes.includes(selectedType)
+        );
 
         console.log('Location match result:', {
           id: location.id,
