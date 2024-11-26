@@ -627,7 +627,21 @@ const TourGuideScreen = ({ navigation }) => {
   };
 
   const startNavigation = async () => {
-    if (!route) return;
+    // Validation checks
+    if (!selectedTypes.length) {
+      Alert.alert('Error', 'Please select at least one story type before starting navigation.');
+      return;
+    }
+
+    if (!destination) {
+      Alert.alert('Error', 'Please enter a destination before starting navigation.');
+      return;
+    }
+
+    if (!route?.coordinates?.length) {
+      Alert.alert('Error', 'No valid route available. Please try selecting a different destination.');
+      return;
+    }
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -664,6 +678,10 @@ const TourGuideScreen = ({ navigation }) => {
       setIsNavigating(false);
       setCurrentInstruction(null);
       setNavigationInfo(null);
+      setSelectedTypes([]); // Clear selected story types
+      setDestination(''); // Clear destination
+      setPredictions([]); // Clear predictions
+      setShowPredictions(false);
 
       // Stop all tracking
       if (locationSubscription) {
@@ -685,8 +703,11 @@ const TourGuideScreen = ({ navigation }) => {
         });
       }
 
-      // Clear the route
-      setRoute(null);
+      // Clear route coordinates but keep route state
+      setRoute(prevRoute => ({
+        ...prevRoute,
+        coordinates: [],
+      }));
       
     } catch (error) {
       console.error('Error stopping navigation:', error);
