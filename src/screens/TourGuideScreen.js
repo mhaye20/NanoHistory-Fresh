@@ -31,6 +31,7 @@ const STATUSBAR_HEIGHT = StatusBar.currentHeight || 0;
 const TOP_OFFSET = Platform.OS === 'ios' ? 44 : STATUSBAR_HEIGHT;
 
 const STORY_TYPES = [
+  'all', // Add "all" as first option
   'music',
   'visualArt',
   'performingArt',
@@ -47,6 +48,7 @@ const STORY_TYPES = [
 ];
 
 const STORY_TYPE_INFO = {
+  all: { label: 'All Stories', icon: 'apps' }, // Add All Stories type info
   music: { label: 'Music', icon: 'music-note' },
   visualArt: { label: 'Visual Art', icon: 'palette' },
   performingArt: { label: 'Performing Arts', icon: 'theater-comedy' },
@@ -184,7 +186,12 @@ const TourGuideScreen = ({ navigation }) => {
 
   // Modify applyFilters to match ExploreScreen's approach
   const applyFilters = useCallback((points, selectedTypes) => {
-    if (!selectedTypes.length) return points;
+    if (!selectedTypes.length) return []; // Return empty array if no types selected
+    
+    // If 'all' is selected, return all points
+    if (selectedTypes.includes('all')) {
+      return points;
+    }
 
     console.log('Applying filters:', {
       selectedTypes,
@@ -223,26 +230,26 @@ const TourGuideScreen = ({ navigation }) => {
       );
     });
 
-    console.log('Filter results:', {
-      totalFiltered: filtered.length,
-      filteredPoints: filtered.map(p => ({
-        id: p.id,
-        title: p.title,
-        story_types: p.story_types
-      }))
-    });
-
     return filtered;
   }, []);
-  
 
-  // Modify toggleStoryType to update filtered waypoints
+  // Modify toggleStoryType to handle exclusive 'all' selection
   const toggleStoryType = (type) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTypes((prev) => {
-      const newTypes = prev.includes(type)
-        ? prev.filter((t) => t !== type)
-        : [...prev, type];
+      let newTypes;
+      if (type === 'all') {
+        // If 'all' is being selected, clear other selections
+        newTypes = prev.includes('all') ? [] : ['all'];
+      } else {
+        // If another type is being selected, remove 'all' and toggle the selected type
+        newTypes = prev.filter(t => t !== 'all');
+        if (prev.includes(type)) {
+          newTypes = newTypes.filter(t => t !== type);
+        } else {
+          newTypes = [...newTypes, type];
+        }
+      }
       
       // Update filtered waypoints when types change
       const filtered = applyFilters(waypoints, newTypes);
@@ -394,53 +401,55 @@ const TourGuideScreen = ({ navigation }) => {
     []
   );
 
-  const handleLocationSelect = async (prediction) => {
-    try {
-      if (!prediction?.geometry?.location) {
-        throw new Error('Invalid location data');
-      }
-
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setIsLoading(true);
-      setShowPredictions(false);
-      setDestination(prediction.description || '');
-
-      const { lat, lng } = prediction.geometry.location;
-      const destinationLocation = {
-        latitude: lat,
-        longitude: lng
-      };
-
-      if (!currentLocation) {
-        throw new Error('Current location not available');
-      }
-
-      // Pass only selectedTypes to generateTourRoute, not filteredWaypoints
-      const newRoute = await tourGuideService.generateTourRoute(
-        currentLocation,
-        destinationLocation,
-        selectedTypes.length > 0 ? selectedTypes : ['all']
-      );
-
-      if (!newRoute?.coordinates?.length) {
-        throw new Error('Failed to generate route coordinates');
-      }
-
-      setRoute(newRoute);
-
-      if (mapRef.current) {
-        mapRef.current.fitToCoordinates(newRoute.coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: true,
-        });
-      }
-    } catch (error) {
-      console.error('Route error:', error);
-      Alert.alert('Error', error.message || 'Failed to generate tour route');
-    } finally {
-      setIsLoading(false);
+const handleLocationSelect = async (prediction) => {
+  try {
+    if (!prediction?.geometry?.location) {
+      throw new Error('Invalid location data');
     }
-  };
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsLoading(true);
+    setShowPredictions(false);
+    setDestination(prediction.description || '');
+
+    const { lat, lng } = prediction.geometry.location;
+    const destinationLocation = {
+      latitude: lat,
+      longitude: lng
+    };
+
+    if (!currentLocation) {
+      throw new Error('Current location not available');
+    }
+
+    // Generate the route
+    const newRoute = await tourGuideService.generateTourRoute(
+      currentLocation,
+      destinationLocation,
+      selectedTypes.length > 0 ? selectedTypes : ['all']
+    );
+
+    if (!newRoute?.coordinates?.length) {
+      throw new Error('Failed to generate route coordinates');
+    }
+
+    // Set the route immediately
+    setRoute(newRoute);
+
+    // Fit the map to show the entire route
+    if (mapRef.current) {
+      mapRef.current.fitToCoordinates(newRoute.coordinates, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
+  } catch (error) {
+    console.error('Route error:', error);
+    Alert.alert('Error', error.message || 'Failed to generate tour route');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
 
   const startLocationTracking = async () => {
@@ -772,28 +781,34 @@ const TourGuideScreen = ({ navigation }) => {
 
             {isSearchExpanded && (
               <>
-                <View style={styles.searchInputContainer}>
-                  <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Enter destination..."
-                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                    value={destination}
-                    onFocus={expandSearchBar}
-                    onChangeText={(text) => {
-                      setDestination(text);
-                      fetchPlacePredictions(text);
-                    }}
-                  />
-                  {destination.length > 0 && (
-                    <TouchableOpacity 
-                      onPress={clearSearch}
-                      style={styles.clearButton}
-                    >
-                      <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+      <View style={styles.searchInputContainer}>
+        <MaterialIcons name="search" size={22} color={selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)"} />
+        <TextInput
+          style={[
+            styles.searchInput,
+            !selectedTypes.length && styles.disabledInput
+          ]}
+          placeholder={selectedTypes.length ? "Enter destination..." : "Select a story type first"}
+          placeholderTextColor={selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)"}
+          value={destination}
+          onFocus={expandSearchBar}
+          onChangeText={(text) => {
+            if (selectedTypes.length) {
+              setDestination(text);
+              fetchPlacePredictions(text);
+            }
+          }}
+          editable={selectedTypes.length > 0}
+        />
+        {destination.length > 0 && selectedTypes.length > 0 && (
+          <TouchableOpacity 
+            onPress={clearSearch}
+            style={styles.clearButton}
+          >
+            <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+          </TouchableOpacity>
+        )}
+      </View>
 
                 {error && (
                   <View style={styles.errorContainer}>
@@ -1210,6 +1225,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '500',
+  },
+  disabledInput: {
+    color: 'rgba(255, 255, 255, 0.2)',
   },
 });
 
