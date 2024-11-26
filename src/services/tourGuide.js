@@ -79,24 +79,37 @@ class TourGuideService {
       const directionsData = await directionsResponse.json();
 
       if (directionsData.status !== 'OK') {
+        console.error('Directions API error:', directionsData);
         throw new Error('Failed to get route directions');
       }
 
       // Extract route coordinates and instructions from directions response
-      let routeCoordinates = [startLocation]; // Start with the start location
+      let routeCoordinates = [];
       const instructions = [];
       const waypointOrder = directionsData.routes[0].waypoint_order;
-      
+
       // Process each leg of the journey
       directionsData.routes[0].legs.forEach(leg => {
+        // Add start location of leg
+        routeCoordinates.push({
+          latitude: leg.start_location.lat,
+          longitude: leg.start_location.lng
+        });
+
         // Process each step in the leg
         leg.steps.forEach(step => {
-          if (step.polyline) {
-            // Decode and add the polyline points for this step
-            const decodedPoints = this.decodePolyline(step.polyline.points);
-            routeCoordinates.push(...decodedPoints);
-          }
-          
+          // Add start location of step
+          routeCoordinates.push({
+            latitude: step.start_location.lat,
+            longitude: step.start_location.lng
+          });
+
+          // Add end location of step
+          routeCoordinates.push({
+            latitude: step.end_location.lat,
+            longitude: step.end_location.lng
+          });
+
           instructions.push({
             text: step.html_instructions.replace(/<[^>]*>/g, ''),
             distance: step.distance.text,
@@ -104,20 +117,25 @@ class TourGuideService {
             maneuver: step.maneuver,
           });
         });
-      });
 
-      // Add end location to ensure complete path
-      routeCoordinates.push(endLocation);
+        // Add end location of leg
+        routeCoordinates.push({
+          latitude: leg.end_location.lat,
+          longitude: leg.end_location.lng
+        });
+      });
 
       // Remove duplicate consecutive points
       routeCoordinates = routeCoordinates.filter((point, index, array) => {
         if (index === 0) return true;
         const prevPoint = array[index - 1];
-        return !(point.latitude === prevPoint.latitude && point.longitude === prevPoint.longitude);
+        return !(
+          Math.abs(point.latitude - prevPoint.latitude) < 0.000001 &&
+          Math.abs(point.longitude - prevPoint.longitude) < 0.000001
+        );
       });
 
       // Transform points to include story content and generate audio
-      // Reorder waypoints according to the optimized order from Google Maps
       const orderedRoutePoints = waypointOrder.map(index => routePoints[index]);
       const transformedPoints = await Promise.all(orderedRoutePoints.map(async point => {
         const story = point.ai_generated_stories?.[0]?.content;
@@ -149,9 +167,14 @@ class TourGuideService {
         totalDuration: directionsData.routes[0].legs.reduce((acc, leg) => acc + leg.duration.value, 0)
       };
 
-      console.log('Route coordinates count:', routeCoordinates.length);
-      console.log('First coordinate:', routeCoordinates[0]);
-      console.log('Last coordinate:', routeCoordinates[routeCoordinates.length - 1]);
+      // Log route data for debugging
+      console.log('Generated route:', {
+        coordinatesCount: routeCoordinates.length,
+        firstCoord: routeCoordinates[0],
+        lastCoord: routeCoordinates[routeCoordinates.length - 1],
+        waypointsCount: transformedPoints.length,
+        allCoords: routeCoordinates
+      });
 
       this.currentRoute = route;
       return route;
@@ -302,35 +325,49 @@ class TourGuideService {
 
   // Decode Google Maps polyline encoding
   decodePolyline(encoded) {
+    if (!encoded) return [];
+
     const points = [];
     let index = 0, lat = 0, lng = 0;
 
-    while (index < encoded.length) {
-      let shift = 0, result = 0;
-      
-      do {
-        let b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (result & 0x20);
-      
-      lat += ((result & 1) ? ~(result >> 1) : (result >> 1));
+    try {
+      while (index < encoded.length) {
+        let shift = 0, result = 0;
+        
+        do {
+          let b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (result & 0x20);
+        
+        const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
 
-      shift = 0;
-      result = 0;
-      
-      do {
-        let b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (result & 0x20);
-      
-      lng += ((result & 1) ? ~(result >> 1) : (result >> 1));
+        shift = 0;
+        result = 0;
+        
+        do {
+          let b = encoded.charCodeAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (result & 0x20);
+        
+        const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
 
-      points.push({
-        latitude: lat / 1e5,
-        longitude: lng / 1e5,
-      });
+        const point = {
+          latitude: lat * 1e-5,
+          longitude: lng * 1e-5,
+        };
+
+        // Validate coordinates
+        if (isFinite(point.latitude) && isFinite(point.longitude) &&
+            Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180) {
+          points.push(point);
+        }
+      }
+    } catch (error) {
+      console.error('Error decoding polyline:', error);
     }
 
     return points;

@@ -232,26 +232,28 @@ const TourGuideScreen = ({ navigation }) => {
           destinationLocation,
           selectedTypes.length > 0 ? selectedTypes : ['all']
         );
+
+        // Log route data for debugging
+        console.log('Route data:', {
+          start: newRoute.start,
+          end: newRoute.end,
+          coordinatesCount: newRoute.coordinates?.length,
+          firstCoord: newRoute.coordinates?.[0],
+          lastCoord: newRoute.coordinates?.[newRoute.coordinates?.length - 1]
+        });
+
         setRoute(newRoute);
 
         // Fit map to show the entire route
-        if (mapRef.current && newRoute.waypoints.length > 0) {
-          const coordinates = [
-            currentLocation,
-            ...newRoute.waypoints.map(point => ({
-              latitude: point.latitude,
-              longitude: point.longitude,
-            })),
-            destinationLocation,
-          ];
-          
-          mapRef.current.fitToCoordinates(coordinates, {
+        if (mapRef.current && newRoute.coordinates?.length > 0) {
+          mapRef.current.fitToCoordinates(newRoute.coordinates, {
             edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
             animated: true,
           });
         }
       }
     } catch (error) {
+      console.error('Route error:', error);
       Alert.alert('Error', 'Failed to generate tour route');
     } finally {
       setIsLoading(false);
@@ -423,7 +425,7 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-return (
+  return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.mapContainer}>
@@ -475,18 +477,16 @@ return (
               pinColor="#ef4444"
             />
           )}
-          {route && (
+          {route?.coordinates && route.coordinates.length > 1 && (
             <Polyline
-              coordinates={[
-                currentLocation,
-                ...(route.waypoints || []).map(point => ({
-                  latitude: point.latitude,
-                  longitude: point.longitude,
-                })),
-                route.end
-              ].filter(coord => coord && typeof coord.latitude === 'number' && typeof coord.longitude === 'number')}
+              coordinates={route.coordinates.map(coord => ({
+                latitude: Number(coord.latitude),
+                longitude: Number(coord.longitude)
+              }))}
               strokeColor="#3b82f6"
               strokeWidth={3}
+              lineDashPattern={[0]}
+              tappable={true}
               geodesic={true}
             />
           )}
