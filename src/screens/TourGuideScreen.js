@@ -68,6 +68,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [route, setRoute] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
+  const [filteredWaypoints, setFilteredWaypoints] = useState([]); // New state for filtered waypoints
   const [isLoading, setIsLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -105,6 +106,69 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
+  // Add applyFilters function similar to ExploreScreen
+  const applyFilters = useCallback((points, selectedTypes) => {
+    if (!selectedTypes.length) return points;
+
+    return points.filter(point => {
+      if (!Array.isArray(point.story_types)) return false;
+      return selectedTypes.some(selectedType => 
+        point.story_types.includes(selectedType)
+      );
+    });
+  }, []);
+
+  // Modify fetchInitialWaypoints to use filtering
+  const fetchInitialWaypoints = async () => {
+    try {
+      const { data: historicalPoints, error } = await supabase
+        .from('locations')
+        .select(`
+          *,
+          ai_generated_stories (
+            content,
+            story_types
+          )
+        `);
+
+      if (error) throw error;
+
+      const transformedPoints = historicalPoints.map(point => ({
+        id: point.id,
+        title: point.title,
+        description: point.description,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        story: point.ai_generated_stories?.[0]?.content,
+        story_types: point.ai_generated_stories?.[0]?.story_types || []
+      }));
+
+      setWaypoints(transformedPoints);
+      // Apply filters to waypoints
+      const filtered = applyFilters(transformedPoints, selectedTypes);
+      setFilteredWaypoints(filtered);
+    } catch (error) {
+      console.error('Error fetching waypoints:', error);
+    }
+  };
+
+  // Modify toggleStoryType to update filtered waypoints
+  const toggleStoryType = (type) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedTypes((prev) => {
+      const newTypes = prev.includes(type)
+        ? prev.filter((t) => t !== type)
+        : [...prev, type];
+      
+      // Update filtered waypoints when types change
+      const filtered = applyFilters(waypoints, newTypes);
+      setFilteredWaypoints(filtered);
+      
+      return newTypes;
+    });
+  };
+
+  // Update useEffect to handle initial filtering
   useEffect(() => {
     const setup = async () => {
       try {
@@ -185,35 +249,6 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-  const fetchInitialWaypoints = async () => {
-    try {
-      const { data: historicalPoints, error } = await supabase
-        .from('locations')
-        .select(`
-          *,
-          ai_generated_stories (
-            content,
-            story_types
-          )
-        `);
-
-      if (error) throw error;
-
-      const transformedPoints = historicalPoints.map(point => ({
-        id: point.id,
-        title: point.title,
-        description: point.description,
-        latitude: point.latitude,
-        longitude: point.longitude,
-        story: point.ai_generated_stories?.[0]?.content,
-        story_types: point.ai_generated_stories?.[0]?.story_types || []
-      }));
-
-      setWaypoints(transformedPoints);
-    } catch (error) {
-      console.error('Error fetching waypoints:', error);
-    }
-  };
 
   const initializeLocation = async () => {
     try {
@@ -299,7 +334,8 @@ const TourGuideScreen = ({ navigation }) => {
       const newRoute = await tourGuideService.generateTourRoute(
         currentLocation,
         destinationLocation,
-        selectedTypes.length > 0 ? selectedTypes : ['all']
+        selectedTypes.length > 0 ? selectedTypes : ['all'],
+        filteredWaypoints // Pass filtered waypoints instead of all waypoints
       );
 
       if (!newRoute?.coordinates?.length) {
@@ -322,14 +358,6 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-  const toggleStoryType = (type) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedTypes((prev) =>
-      prev.includes(type)
-        ? prev.filter((t) => t !== type)
-        : [...prev, type]
-    );
-  };
 
   const startLocationTracking = async () => {
     try {
@@ -511,7 +539,7 @@ const TourGuideScreen = ({ navigation }) => {
       <View style={styles.mapContainer}>
         {currentLocation ? (
           <>
-            <MapView
+      <MapView
               ref={mapRef}
               style={styles.map}
               initialRegion={{
@@ -559,26 +587,26 @@ const TourGuideScreen = ({ navigation }) => {
                   });
                 }
               }}
-            >
-              {currentLocation && (
-                <Marker
-                  coordinate={currentLocation}
-                  title="You are here"
-                  pinColor="#3b82f6"
-                />
-              )}
-              {waypoints.map((point, index) => (
-                <Marker
-                  key={point.id || index}
-                  coordinate={{
-                    latitude: point.latitude,
-                    longitude: point.longitude,
-                  }}
-                  title={point.title}
-                  description={point.description}
-                  pinColor="#10b981"
-                />
-              ))}
+      >
+        {currentLocation && (
+          <Marker
+            coordinate={currentLocation}
+            title="You are here"
+            pinColor="#3b82f6"
+          />
+        )}
+        {filteredWaypoints.map((point, index) => ( // Use filteredWaypoints instead of waypoints
+          <Marker
+            key={point.id || index}
+            coordinate={{
+              latitude: point.latitude,
+              longitude: point.longitude,
+            }}
+            title={point.title}
+            description={point.description}
+            pinColor="#10b981"
+          />
+        ))}
               {route?.end && (
                 <Marker
                   coordinate={route.end}
@@ -599,7 +627,7 @@ const TourGuideScreen = ({ navigation }) => {
                   geodesic={true}
                 />
               )}
-            </MapView>
+      </MapView>
 
             {/* Compass indicator */}
             {isNavigating && isHeadTrackingEnabled && (
