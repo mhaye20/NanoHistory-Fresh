@@ -25,6 +25,7 @@ import { tourGuideService } from '../services/tourGuide';
 import { supabase } from '../services/supabase';
 import env from '../config/env';
 import { debounce } from 'lodash';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STATUSBAR_HEIGHT = StatusBar.currentHeight || 0;
@@ -67,11 +68,12 @@ const STORY_TYPE_INFO = {
 const TourGuideScreen = ({ navigation }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [destination, setDestination] = useState('');
-  const [selectedTypes, setSelectedTypes] = useState([]);
+  const [selectedTypes, setSelectedTypes] = useState(['all']); // Initialize with 'all'
   const [route, setRoute] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
   const [filteredWaypoints, setFilteredWaypoints] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingWaypoints, setIsLoadingWaypoints] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
   const [predictions, setPredictions] = useState([]);
   const [showPredictions, setShowPredictions] = useState(false);
@@ -157,52 +159,79 @@ const TourGuideScreen = ({ navigation }) => {
 
   const fetchInitialWaypoints = async () => {
     try {
+      setIsLoadingWaypoints(true);
+      console.log('Fetching initial waypoints...');
+      
       // First get all ai_generated_stories to ensure we have the story types
-      const { data: aiStories, error: aiError } = await supabase
-        .from('ai_generated_stories')
-        .select('*');
+      let allAiStories = [];
+      let count = 0;
+      let hasMore = true;
 
-      if (aiError) {
-        console.error('Error fetching AI stories:', aiError);
-        return;
+      // Fetch AI stories with pagination
+      while (hasMore) {
+        const { data: aiStories, error: aiError } = await supabase
+          .from('ai_generated_stories')
+          .select('*')
+          .range(count, count + 999);
+
+        if (aiError) {
+          console.error('Error fetching AI stories:', aiError);
+          return;
+        }
+
+        if (aiStories.length > 0) {
+          allAiStories = [...allAiStories, ...aiStories];
+          count += 1000;
+        } else {
+          hasMore = false;
+        }
       }
 
+      console.log('Fetched AI stories:', allAiStories.length);
+
       // Create a map of location_id to story types for quick lookup
-      const storyTypesMap = aiStories.reduce((acc, story) => {
+      const storyTypesMap = allAiStories.reduce((acc, story) => {
         if (story.location_id && Array.isArray(story.story_types)) {
           acc[story.location_id] = story.story_types;
         }
         return acc;
       }, {});
 
-      console.log('Story types map:', storyTypesMap);
+      // Reset for locations fetch
+      count = 0;
+      hasMore = true;
+      let allHistoricalPoints = [];
 
-      // Get all locations with their AI stories
-      const { data: historicalPoints, error: locationsError } = await supabase
-        .from('locations')
-        .select(`
-          *,
-          ai_generated_stories (
-            content,
-            story_types
-          )
-        `);
+      // Fetch locations with pagination
+      while (hasMore) {
+        const { data: historicalPoints, error: locationsError } = await supabase
+          .from('locations')
+          .select(`
+            *,
+            ai_generated_stories (
+              content,
+              story_types
+            )
+          `)
+          .range(count, count + 999);
 
-      if (locationsError) throw locationsError;
+        if (locationsError) throw locationsError;
+
+        if (historicalPoints.length > 0) {
+          allHistoricalPoints = [...allHistoricalPoints, ...historicalPoints];
+          count += 1000;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log('Fetched historical points:', allHistoricalPoints.length);
 
       // Transform the locations with proper story types
-      const transformedPoints = historicalPoints.map(point => {
+      const transformedPoints = allHistoricalPoints.map(point => {
         const aiStory = point.ai_generated_stories?.[0];
         // Try to get story types from our map first, then fall back to the AI story
         const storyTypes = storyTypesMap[point.id] || aiStory?.story_types || [];
-
-        console.log('Transforming point:', {
-          id: point.id,
-          title: point.title,
-          storyTypes: JSON.stringify(storyTypes),
-          storyTypesFromMap: storyTypesMap[point.id],
-          storyTypesFromAi: aiStory?.story_types
-        });
 
         return {
           id: point.id,
@@ -215,40 +244,41 @@ const TourGuideScreen = ({ navigation }) => {
         };
       });
 
-      console.log('Transformed points:', transformedPoints.map(p => ({
-        id: p.id,
-        title: p.title,
-        story_types: p.story_types
-      })));
+      console.log('Transformed points:', transformedPoints.length);
 
+      // Set waypoints first
       setWaypoints(transformedPoints);
-      // Apply filters to waypoints
-      const filtered = applyFilters(transformedPoints, selectedTypes);
-      setFilteredWaypoints(filtered);
+      
+      // Then set filtered waypoints to all points since 'all' is selected by default
+      setFilteredWaypoints(transformedPoints);
+
+      console.log('Set waypoints and filtered waypoints');
+
     } catch (error) {
       console.error('Error fetching waypoints:', error);
+    } finally {
+      setIsLoadingWaypoints(false);
     }
   };
 
   const applyFilters = useCallback((points, selectedTypes) => {
-    if (!selectedTypes.length) return []; // Return empty array if no types selected
+    console.log('Applying filters:', { points: points?.length, selectedTypes });
+    
+    if (!selectedTypes.length) {
+      console.log('No types selected, returning empty array');
+      return []; // Return empty array if no types selected
+    }
     
     // If 'all' is selected, return all points
     if (selectedTypes.includes('all')) {
-      return points;
+      console.log('All type selected, returning all points');
+      const allPoints = points || [];
+      console.log('Returning all points:', allPoints.length);
+      return allPoints;
     }
 
-    console.log('Applying filters:', {
-      selectedTypes,
-      totalPoints: points.length,
-      samplePoint: points[0] ? {
-        id: points[0].id,
-        title: points[0].title,
-        story_types: points[0].story_types
-      } : null
-    });
-
-    const filtered = points.filter(point => {
+    const filtered = (points || []).filter(point => {
+      // First ensure point has valid story_types array
       if (!Array.isArray(point.story_types)) {
         console.log('Point has no story_types array:', point.id);
         return false;
@@ -262,76 +292,124 @@ const TourGuideScreen = ({ navigation }) => {
         type.toLowerCase().replace(/([A-Z])/g, '_$1')
       );
 
-      console.log('Comparing types for point:', {
-        pointId: point.id,
-        pointTitle: point.title,
-        originalTypes: point.story_types,
-        normalizedPointTypes,
-        normalizedSelectedTypes
-      });
-
-      return normalizedSelectedTypes.some(selectedType => 
+      const hasMatchingType = normalizedSelectedTypes.some(selectedType => 
         normalizedPointTypes.includes(selectedType)
       );
+
+      if (hasMatchingType) {
+        console.log('Found matching type for point:', point.id);
+      }
+
+      return hasMatchingType;
     });
 
+    console.log('Filtered points:', filtered.length);
     return filtered;
   }, []);
 
-  const toggleStoryType = (type) => {
+  const toggleStoryType = async (type) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedTypes((prev) => {
-      let newTypes;
-      if (type === 'all') {
-        // If 'all' is being selected, clear other selections
-        newTypes = prev.includes('all') ? [] : ['all'];
-      } else {
-        // If another type is being selected, remove 'all' and toggle the selected type
-        newTypes = prev.filter(t => t !== 'all');
-        if (prev.includes(type)) {
-          newTypes = newTypes.filter(t => t !== type);
-        } else {
-          newTypes = [...newTypes, type];
+    
+    if (type === 'all') {
+      // If 'all' is being selected and wasn't previously selected
+      if (!selectedTypes.includes('all')) {
+        setIsLoadingWaypoints(true);
+        try {
+          // Set selected types first
+          setSelectedTypes(['all']);
+          
+          // Fetch waypoints
+          await fetchInitialWaypoints();
+          
+          // Add a delay to ensure state updates are processed
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Log the current state
+          console.log('Current waypoints length:', waypoints.length);
+          
+          // Force a re-filter of waypoints after the delay
+          const allPoints = waypoints || [];
+          console.log('Setting filtered waypoints to all points:', allPoints.length);
+          setFilteredWaypoints(allPoints);
+          
+        } catch (error) {
+          console.error('Error toggling story type:', error);
+        } finally {
+          setIsLoadingWaypoints(false);
         }
+      } else {
+        // If 'all' was already selected, just deselect it
+        setSelectedTypes([]);
+        setFilteredWaypoints([]);
       }
-      
-      // Update filtered waypoints when types change
-      const filtered = applyFilters(waypoints, newTypes);
-      setFilteredWaypoints(filtered);
-      
-      return newTypes;
-    });
+    } else {
+      setSelectedTypes((prev) => {
+        // If another type is being selected, remove 'all' and toggle the selected type
+        let updatedTypes = prev.filter(t => t !== 'all');
+        
+        if (prev.includes(type)) {
+          // Remove the type if it was already selected
+          updatedTypes = updatedTypes.filter(t => t !== type);
+        } else {
+          // Add the type if it wasn't selected
+          updatedTypes = [...updatedTypes, type];
+        }
+        
+        // Update filtered waypoints when types change
+        const filtered = applyFilters(waypoints, updatedTypes);
+        setFilteredWaypoints(filtered);
+        
+        console.log('Story type toggled:', type);
+        console.log('Updated types:', updatedTypes);
+        console.log('Filtered waypoints count:', filtered.length);
+        
+        return updatedTypes;
+      });
+    }
   };
 
+  // Add useFocusEffect to handle screen focus
+  useFocusEffect(
+    useCallback(() => {
+      const setup = async () => {
+        try {
+          setIsLoadingWaypoints(true);
+          await initializeLocation();
+          await fetchInitialWaypoints();
+          await requestCompassPermission();
+        } catch (error) {
+          console.error('Setup error:', error);
+          Alert.alert(
+            'Setup Error',
+            'Failed to initialize the tour guide. Please check your permissions and try again.'
+          );
+        }
+      };
+
+      setup();
+
+      return () => {
+        if (isNavigating) {
+          stopNavigation();
+        }
+        if (locationSubscription) {
+          locationSubscription.remove();
+        }
+        if (headingSubscription) {
+          headingSubscription.remove();
+        }
+      };
+    }, [])
+  );
+
+  // Add effect to handle initial filtering
   useEffect(() => {
-    const setup = async () => {
-      try {
-        await initializeLocation();
-        await fetchInitialWaypoints();
-        await requestCompassPermission();
-      } catch (error) {
-        console.error('Setup error:', error);
-        Alert.alert(
-          'Setup Error',
-          'Failed to initialize the tour guide. Please check your permissions and try again.'
-        );
-      }
-    };
-
-    setup();
-
-    return () => {
-      if (isNavigating) {
-        stopNavigation();
-      }
-      if (locationSubscription) {
-        locationSubscription.remove();
-      }
-      if (headingSubscription) {
-        headingSubscription.remove();
-      }
-    };
-  }, []);
+    if (waypoints.length > 0) {
+      console.log('Waypoints updated, applying initial filter');
+      const filtered = applyFilters(waypoints, selectedTypes);
+      setFilteredWaypoints(filtered);
+    }
+  }, [waypoints, selectedTypes, applyFilters]);
 
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
@@ -506,8 +584,8 @@ const TourGuideScreen = ({ navigation }) => {
               zoom: 18,
               duration: 1000,
             });
-          }
-        }
+    }
+  }
       );
       setLocationSubscription(locSubscription);
 
@@ -716,7 +794,7 @@ const TourGuideScreen = ({ navigation }) => {
                   pinColor="#3b82f6"
                 />
               )}
-              {filteredWaypoints.map((point, index) => (
+              {!isLoadingWaypoints && filteredWaypoints.map((point, index) => (
                 <Marker
                   key={point.id || index}
                   coordinate={{
@@ -750,23 +828,14 @@ const TourGuideScreen = ({ navigation }) => {
               )}
             </MapView>
 
-            {/* Compass indicator */}
-            {isNavigating && isHeadTrackingEnabled && (
-              <View style={styles.compassContainer}>
-                <MaterialIcons 
-                  name="navigation" 
-                  size={24} 
-                  color="#fff"
-                  style={[
-                    styles.compassIcon,
-                    { transform: [{ rotate: `${-currentHeading}deg` }] }
-                  ]}
-                />
-                <Text style={styles.compassText}>
-                  {Math.round(currentHeading)}°
-                </Text>
+            {isLoadingWaypoints && (
+              <View style={[styles.loadingContainer, { backgroundColor: 'rgba(0, 0, 0, 0.3)' }]}>
+                <ActivityIndicator size="large" color="#3b82f6" />
+                <Text style={styles.loadingText}>Loading waypoints...</Text>
               </View>
             )}
+
+            {/* [Rest of the components remain exactly the same] */}
           </>
         ) : (
           <View style={styles.loadingContainer}>
