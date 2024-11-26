@@ -12,6 +12,7 @@ import {
   Platform,
   StatusBar,
   Switch,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -80,6 +81,29 @@ const TourGuideScreen = ({ navigation }) => {
   const [currentHeading, setCurrentHeading] = useState(0);
   const [hasCompassPermission, setHasCompassPermission] = useState(false);
   const [isHeadTrackingEnabled, setIsHeadTrackingEnabled] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(true);
+  const searchBarHeight = useRef(new Animated.Value(1)).current;
+
+  const toggleSearchBar = () => {
+    const toValue = isSearchExpanded ? 0 : 1;
+    Animated.spring(searchBarHeight, {
+      toValue,
+      useNativeDriver: false,
+      friction: 8,
+    }).start();
+    setIsSearchExpanded(!isSearchExpanded);
+  };
+
+  const expandSearchBar = () => {
+    if (!isSearchExpanded) {
+      Animated.spring(searchBarHeight, {
+        toValue: 1,
+        useNativeDriver: false,
+        friction: 8,
+      }).start();
+      setIsSearchExpanded(true);
+    }
+  };
 
   useEffect(() => {
     const setup = async () => {
@@ -575,7 +599,7 @@ const TourGuideScreen = ({ navigation }) => {
                   geodesic={true}
                 />
               )}
-      </MapView>
+            </MapView>
 
             {/* Compass indicator */}
             {isNavigating && isHeadTrackingEnabled && (
@@ -604,100 +628,123 @@ const TourGuideScreen = ({ navigation }) => {
       </View>
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <View style={styles.searchContainer}>
+        <Animated.View 
+          style={[
+            styles.searchContainer,
+            {
+              maxHeight: searchBarHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [56, 500],
+              }),
+            },
+          ]}
+        >
           <BlurView intensity={80} tint="dark" style={styles.searchBlur}>
-            <View style={styles.headerContainer}>
+
+            <View style={[
+              styles.headerContainer,
+              { marginBottom: isSearchExpanded ? 12 : 0 }
+            ]}>
+              <Text style={styles.headerTitle}>Create a Trail</Text>
               <TouchableOpacity
-                style={styles.backButton}
-                onPress={handleBack}
+                style={styles.expandButton}
+                onPress={toggleSearchBar}
               >
-                <MaterialIcons name="arrow-back" size={24} color="#fff" />
+                <MaterialIcons 
+                  name={isSearchExpanded ? "expand-less" : "expand-more"} 
+                  size={24} 
+                  color="#fff" 
+                />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Historical Tour Guide</Text>
             </View>
 
-            <View style={styles.searchInputContainer}>
-              <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Enter destination..."
-                placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                value={destination}
-                onChangeText={(text) => {
-                  setDestination(text);
-                  fetchPlacePredictions(text);
-                }}
-              />
-              {destination.length > 0 && (
-                <TouchableOpacity 
-                  onPress={clearSearch}
-                  style={styles.clearButton}
-                >
-                  <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {error && (
-              <View style={styles.errorContainer}>
-                <MaterialIcons name="error-outline" size={20} color="#ef4444" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            {showPredictions && predictions.length > 0 && (
-              <ScrollView style={styles.predictionsContainer}>
-                {predictions.map((prediction) => (
-                  <TouchableOpacity
-                    key={prediction.place_id}
-                    style={styles.predictionItem}
-                    onPress={() => handleLocationSelect(prediction)}
-                  >
-                    <MaterialIcons name="place" size={20} color="rgba(255, 255, 255, 0.6)" />
-                    <View style={styles.predictionTextContainer}>
-                      <Text style={styles.predictionMainText}>
-                        {prediction.structured_formatting.main_text}
-                      </Text>
-                      <Text style={styles.predictionSecondaryText}>
-                        {prediction.structured_formatting.secondary_text}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.typeContainer}
-              contentContainerStyle={styles.typeContentContainer}
-            >
-              {STORY_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[
-                    styles.typeButton,
-                    selectedTypes.includes(type) && styles.selectedType,
-                  ]}
-                  onPress={() => toggleStoryType(type)}
-                >
-                  <MaterialIcons 
-                    name={STORY_TYPE_INFO[type].icon} 
-                    size={20} 
-                    color={selectedTypes.includes(type) ? '#fff' : 'rgba(255, 255, 255, 0.6)'} 
+            {isSearchExpanded && (
+              <>
+                <View style={styles.searchInputContainer}>
+                  <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Enter destination..."
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    value={destination}
+                    onFocus={expandSearchBar}
+                    onChangeText={(text) => {
+                      setDestination(text);
+                      fetchPlacePredictions(text);
+                    }}
                   />
-                  <Text style={[
-                    styles.typeText,
-                    selectedTypes.includes(type) && styles.selectedTypeText,
-                  ]}>
-                    {STORY_TYPE_INFO[type].label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {destination.length > 0 && (
+                    <TouchableOpacity 
+                      onPress={clearSearch}
+                      style={styles.clearButton}
+                    >
+                      <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {error && (
+                  <View style={styles.errorContainer}>
+                    <MaterialIcons name="error-outline" size={20} color="#ef4444" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+
+                {showPredictions && predictions.length > 0 && (
+                  <ScrollView style={styles.predictionsContainer}>
+                    {predictions.map((prediction) => (
+                      <TouchableOpacity
+                        key={prediction.place_id}
+                        style={styles.predictionItem}
+                        onPress={() => handleLocationSelect(prediction)}
+                      >
+                        <MaterialIcons name="place" size={20} color="rgba(255, 255, 255, 0.6)" />
+                        <View style={styles.predictionTextContainer}>
+                          <Text style={styles.predictionMainText}>
+                            {prediction.structured_formatting.main_text}
+                          </Text>
+                          <Text style={styles.predictionSecondaryText}>
+                            {prediction.structured_formatting.secondary_text}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.typeContainer}
+                  contentContainerStyle={styles.typeContentContainer}
+                >
+                  {STORY_TYPES.map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.typeButton,
+                        selectedTypes.includes(type) && styles.selectedType,
+                      ]}
+                      onPress={() => toggleStoryType(type)}
+                    >
+                      <MaterialIcons 
+                        name={STORY_TYPE_INFO[type].icon} 
+                        size={20} 
+                        color={selectedTypes.includes(type) ? '#fff' : 'rgba(255, 255, 255, 0.6)'} 
+                      />
+                      <Text style={[
+                        styles.typeText,
+                        selectedTypes.includes(type) && styles.selectedTypeText,
+                      ]}>
+                        {STORY_TYPE_INFO[type].label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
           </BlurView>
-        </View>
+        </Animated.View>
 
         {isLoading && (
           <View style={styles.loadingContainer}>
@@ -749,19 +796,19 @@ const TourGuideScreen = ({ navigation }) => {
               </View>
             )}
 
-      {isNavigating && (
-        <View style={styles.trackingModeContainer}>
-          <Text style={styles.trackingModeText}>
-            Head Tracking Navigation
-          </Text>
-          <Switch
-            value={isHeadTrackingEnabled}
-            onValueChange={toggleHeadTracking}
-            trackColor={{ false: "#767577", true: "#81b0ff" }}
-            thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
-          />
-        </View>
-      )}
+            {isNavigating && (
+              <View style={styles.trackingModeContainer}>
+                <Text style={styles.trackingModeText}>
+                  Head Tracking Navigation
+                </Text>
+                <Switch
+                  value={isHeadTrackingEnabled}
+                  onValueChange={toggleHeadTracking}
+                  trackColor={{ false: "#767577", true: "#81b0ff" }}
+                  thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
+                />
+              </View>
+            )}
 
             <TouchableOpacity
               style={[styles.navigationButton, isNavigating && styles.stopButton]}
@@ -837,7 +884,7 @@ const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
   },
   backButton: {
     padding: 6,
@@ -845,10 +892,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
+  expandButton: {
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
+    flex: 1,
+    textAlign: 'center',
   },
   searchInputContainer: {
     flexDirection: 'row',
