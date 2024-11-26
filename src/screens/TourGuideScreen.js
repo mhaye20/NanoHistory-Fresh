@@ -13,7 +13,9 @@ import {
   StatusBar,
   Switch,
   Animated,
+  Modal,
 } from 'react-native';
+import LocationDetailScreen from './LocationDetailScreen';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -92,6 +94,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [mapKey, setMapKey] = useState(0);
   const [mapRegion, setMapRegion] = useState(null);
   const lastRegionRef = useRef(null);
+  const [selectedWaypoint, setSelectedWaypoint] = useState(null);
 
   const toggleSearchBar = () => {
     const toValue = isSearchExpanded ? 0 : 1;
@@ -807,6 +810,10 @@ const TourGuideScreen = ({ navigation }) => {
                   title={point.title}
                   description={point.description}
                   pinColor="#10b981"
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedWaypoint(point);
+                  }}
                 />
               ))}
               {route?.end && (
@@ -1070,12 +1077,39 @@ const TourGuideScreen = ({ navigation }) => {
           </BlurView>
         )}
       </SafeAreaView>
+
+      <Modal
+        visible={selectedWaypoint !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedWaypoint(null)}
+      >
+        <View style={styles.modalContent}>
+          {selectedWaypoint && (
+            <LocationDetailScreen
+              route={{ params: { location: selectedWaypoint } }}
+              navigation={{
+                ...navigation,
+                goBack: () => setSelectedWaypoint(null)
+              }}
+            />
+          )}
+        </View>
+      </Modal>
+
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  modal: {
+    margin: 0,
+    justifyContent: 'flex-end',
+  },
   disabledTypeButton: {
     opacity: 0.5,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
