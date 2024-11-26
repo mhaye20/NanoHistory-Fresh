@@ -65,7 +65,7 @@ const TourGuideScreen = ({ navigation }) => {
   const [destination, setDestination] = useState('');
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [route, setRoute] = useState(null);
-  const [waypoints, setWaypoints] = useState([]); // New state for waypoints
+  const [waypoints, setWaypoints] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -75,6 +75,9 @@ const TourGuideScreen = ({ navigation }) => {
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [currentInstruction, setCurrentInstruction] = useState(null);
   const [navigationInfo, setNavigationInfo] = useState(null);
+  const [headingSubscription, setHeadingSubscription] = useState(null);
+  const [currentHeading, setCurrentHeading] = useState(0);
+  const [hasCompassPermission, setHasCompassPermission] = useState(false);
 
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
@@ -111,7 +114,8 @@ const TourGuideScreen = ({ navigation }) => {
 
   useEffect(() => {
     initializeLocation();
-    fetchInitialWaypoints(); // New function to fetch waypoints on load
+    fetchInitialWaypoints();
+    requestCompassPermission();
     return () => {
       if (isNavigating) {
         stopNavigation();
@@ -119,8 +123,28 @@ const TourGuideScreen = ({ navigation }) => {
       if (locationSubscription) {
         locationSubscription.remove();
       }
+      if (headingSubscription) {
+        headingSubscription.remove();
+      }
     };
   }, []);
+
+  const requestCompassPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setHasCompassPermission(true);
+      } else {
+        Alert.alert(
+          'Permission Required',
+          'Compass permission is needed for navigation features.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error requesting compass permission:', error);
+    }
+  };
 
   const fetchInitialWaypoints = async () => {
     try {
@@ -136,7 +160,6 @@ const TourGuideScreen = ({ navigation }) => {
 
       if (error) throw error;
 
-      // Transform points to include story content
       const transformedPoints = historicalPoints.map(point => ({
         id: point.id,
         title: point.title,
@@ -233,7 +256,6 @@ const TourGuideScreen = ({ navigation }) => {
           selectedTypes.length > 0 ? selectedTypes : ['all']
         );
 
-        // Log route data for debugging
         console.log('Route data:', {
           start: newRoute.start,
           end: newRoute.end,
@@ -244,7 +266,6 @@ const TourGuideScreen = ({ navigation }) => {
 
         setRoute(newRoute);
 
-        // Fit map to show the entire route
         if (mapRef.current && newRoute.coordinates?.length > 0) {
           mapRef.current.fitToCoordinates(newRoute.coordinates, {
             edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
@@ -270,33 +291,57 @@ const TourGuideScreen = ({ navigation }) => {
   };
 
   const startLocationTracking = async () => {
-    const subscription = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        distanceInterval: 10,
-        timeInterval: 5000,
-      },
-      (location) => {
-        setCurrentLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-
-        // Update map view to follow user
-        if (mapRef.current) {
-          mapRef.current.animateCamera({
-            center: {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            },
-            heading: location.coords.heading || 0,
-            pitch: 45,
-            zoom: 17,
+    try {
+      // Start location tracking with higher accuracy and frequency
+      const locSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          distanceInterval: 5,
+          timeInterval: 1000,
+        },
+        (location) => {
+          console.log('Location update:', location.coords);
+          setCurrentLocation({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
           });
+
+          // Update map center when location changes
+          if (mapRef.current && isNavigating) {
+            mapRef.current.animateCamera({
+              center: {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+              },
+              pitch: 60,
+              zoom: 18,
+              duration: 1000,
+            });
+          }
         }
+      );
+      setLocationSubscription(locSubscription);
+
+      // Start compass tracking if permission granted
+      if (hasCompassPermission) {
+        const headSubscription = await Location.watchHeadingAsync((heading) => {
+          console.log('Heading update:', heading.trueHeading);
+          setCurrentHeading(heading.trueHeading);
+          
+          // Update map bearing when heading changes
+          if (mapRef.current && isNavigating) {
+            mapRef.current.animateCamera({
+              bearing: heading.trueHeading,
+              duration: 500,
+            });
+          }
+        });
+        setHeadingSubscription(headSubscription);
       }
-    );
-    setLocationSubscription(subscription);
+    } catch (error) {
+      console.error('Error starting location/heading tracking:', error);
+      Alert.alert('Error', 'Failed to start location tracking');
+    }
   };
 
   const startNavigation = async () => {
@@ -307,72 +352,21 @@ const TourGuideScreen = ({ navigation }) => {
       await tourGuideService.startNavigation();
       setIsNavigating(true);
 
-      // Set initial navigation info
       setNavigationInfo({
         totalDistance: (route.totalDistance / 1000).toFixed(1),
         totalDuration: Math.round(route.totalDuration / 60)
       });
       setCurrentInstruction(route.instructions[0]);
 
-      // Start location tracking
       await startLocationTracking();
 
-      // Calculate optimal zoom level based on route distance
-      const routeDistance = route.totalDistance / 1000; // Convert to km
-      let zoomLevel = 15; // Default zoom level
-      if (routeDistance > 10) {
-        zoomLevel = 12;
-      } else if (routeDistance > 5) {
-        zoomLevel = 13;
-      } else if (routeDistance > 2) {
-        zoomLevel = 14;
-      }
-
-      // Calculate route bounds
-      const bounds = {
-        northEast: {
-          latitude: Math.max(
-            currentLocation.latitude,
-            route.end.latitude,
-            ...route.waypoints.map(p => p.latitude)
-          ),
-          longitude: Math.max(
-            currentLocation.longitude,
-            route.end.longitude,
-            ...route.waypoints.map(p => p.longitude)
-          ),
-        },
-        southWest: {
-          latitude: Math.min(
-            currentLocation.latitude,
-            route.end.latitude,
-            ...route.waypoints.map(p => p.latitude)
-          ),
-          longitude: Math.min(
-            currentLocation.longitude,
-            route.end.longitude,
-            ...route.waypoints.map(p => p.longitude)
-          ),
-        },
-      };
-
-      // Calculate center point
-      const center = {
-        latitude: (bounds.northEast.latitude + bounds.southWest.latitude) / 2,
-        longitude: (bounds.northEast.longitude + bounds.southWest.longitude) / 2,
-      };
-
-      // Calculate delta values for zoom
-      const latDelta = (bounds.northEast.latitude - bounds.southWest.latitude) * 1.5;
-      const lngDelta = (bounds.northEast.longitude - bounds.southWest.longitude) * 1.5;
-
-      // Animate map to show the route
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          ...center,
-          latitudeDelta: Math.max(latDelta, 0.02),
-          longitudeDelta: Math.max(lngDelta, 0.02),
-        }, 1000);
+      if (mapRef.current && currentLocation) {
+        mapRef.current.animateCamera({
+          center: currentLocation,
+          heading: currentHeading,
+          pitch: 60,
+          zoom: 17,
+        });
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to start navigation');
@@ -387,13 +381,15 @@ const TourGuideScreen = ({ navigation }) => {
       setCurrentInstruction(null);
       setNavigationInfo(null);
 
-      // Stop location tracking
       if (locationSubscription) {
         locationSubscription.remove();
         setLocationSubscription(null);
       }
+      if (headingSubscription) {
+        headingSubscription.remove();
+        setHeadingSubscription(null);
+      }
 
-      // Reset map view
       if (mapRef.current && route) {
         mapRef.current.fitToCoordinates([
           currentLocation,
@@ -438,7 +434,7 @@ const TourGuideScreen = ({ navigation }) => {
             longitudeDelta: 0.0421,
           } : null}
           zoomEnabled={true}
-          scrollEnabled={true}
+          scrollEnabled={!isNavigating}
           pitchEnabled={true}
           rotateEnabled={true}
           showsUserLocation={true}
@@ -450,6 +446,30 @@ const TourGuideScreen = ({ navigation }) => {
           maxZoomLevel={20}
           zoomTapEnabled={true}
           zoomControlEnabled={true}
+          followsUserLocation={isNavigating}
+          followsUserHeading={isNavigating}
+          userLocationAnnotationTitle="You are here"
+          userLocationCalloutEnabled={true}
+          camera={{
+            center: currentLocation,
+            pitch: 60,
+            heading: currentHeading,
+            altitude: 1000,
+            zoom: 17,
+          }}
+        >
+          onUserLocationChange={(event) => {
+            if (isNavigating && event.nativeEvent.coordinate) {
+              const { latitude, longitude } = event.nativeEvent.coordinate;
+              mapRef.current?.animateCamera({
+                center: { latitude, longitude },
+                heading: currentHeading,
+                pitch: 60,
+                zoom: 18,
+                duration: 1000,
+              });
+            }
+          }}
         >
           {currentLocation && (
             <Marker
@@ -491,6 +511,24 @@ const TourGuideScreen = ({ navigation }) => {
             />
           )}
         </MapView>
+
+        {/* Compass indicator */}
+        {isNavigating && (
+          <View style={styles.compassContainer}>
+            <MaterialIcons 
+              name="navigation" 
+              size={24} 
+              color="#fff"
+              style={[
+                styles.compassIcon,
+                { transform: [{ rotate: `${-currentHeading}deg` }] }
+              ]}
+            />
+            <Text style={styles.compassText}>
+              {Math.round(currentHeading)}°
+            </Text>
+          </View>
+        )}
       </View>
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
@@ -670,6 +708,27 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  compassContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 80,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 24,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  compassIcon: {
+    marginBottom: 4,
+    transform: [{ rotate: '0deg' }], // This will be dynamically updated
+  },
+  compassText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   overlay: {
     position: 'absolute',
