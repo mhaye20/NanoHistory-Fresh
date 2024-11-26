@@ -304,31 +304,32 @@ const TourGuideScreen = ({ navigation }) => {
   }, []);
 
   const toggleStoryType = async (type) => {
+    // Don't allow changes during navigation
+    if (isNavigating) {
+      Alert.alert(
+        'Navigation Active',
+        'Please stop navigation before changing story types.'
+      );
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     if (type === 'all') {
-      // If 'all' is being selected and wasn't previously selected
       if (!selectedTypes.includes('all')) {
         setSelectedTypes(['all']);
       } else {
-        // If 'all' was already selected, just deselect it
         setSelectedTypes([]);
       }
     } else {
       setSelectedTypes((prev) => {
-        // If another type is being selected, remove 'all' and toggle the selected type
         let updatedTypes = prev.filter(t => t !== 'all');
         
         if (prev.includes(type)) {
-          // Remove the type if it was already selected
           updatedTypes = updatedTypes.filter(t => t !== type);
         } else {
-          // Add the type if it wasn't selected
           updatedTypes = [...updatedTypes, type];
         }
-        
-        console.log('Story type toggled:', type);
-        console.log('Updated types:', updatedTypes);
         
         return updatedTypes;
       });
@@ -630,6 +631,7 @@ const TourGuideScreen = ({ navigation }) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await tourGuideService.startNavigation();
       setIsNavigating(true);
+      setIsSearchExpanded(false); // Collapse the search overlay when navigation starts
 
       setNavigationInfo({
         totalDistance: (route.totalDistance / 1000).toFixed(1),
@@ -670,20 +672,20 @@ const TourGuideScreen = ({ navigation }) => {
         await stopHeadingTracking();
       }
 
-      // Reset map view
-      if (mapRef.current && route) {
-        mapRef.current.fitToCoordinates([
-          currentLocation,
-          ...route.waypoints.map(point => ({
-            latitude: point.latitude,
-            longitude: point.longitude,
-          })),
-          route.end
-        ], {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: true,
+      // Reset map view to current location with reasonable zoom
+      if (mapRef.current && currentLocation) {
+        mapRef.current.animateCamera({
+          center: currentLocation,
+          pitch: 0,
+          bearing: 0,
+          zoom: 15,
+          duration: 500,
         });
       }
+
+      // Clear the route
+      setRoute(null);
+      
     } catch (error) {
       console.error('Error stopping navigation:', error);
     }
@@ -702,7 +704,7 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-  return (
+return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.mapContainer}>
@@ -847,25 +849,37 @@ const TourGuideScreen = ({ navigation }) => {
             {isSearchExpanded && (
               <>
                 <View style={styles.searchInputContainer}>
-                  <MaterialIcons name="search" size={22} color={selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)"} />
+                  <MaterialIcons 
+                    name="search" 
+                    size={22} 
+                    color={isNavigating ? "rgba(255, 255, 255, 0.2)" : (selectedTypes.length ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.2)")} 
+                  />
                   <TextInput
                     style={[
                       styles.searchInput,
-                      !selectedTypes.length && styles.disabledInput
+                      (isNavigating || !selectedTypes.length) && styles.disabledInput
                     ]}
-                    placeholder={selectedTypes.length ? "Enter destination..." : "Select a story type first"}
-                    placeholderTextColor={selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)"}
+                    placeholder={
+                      isNavigating 
+                        ? "Stop navigation to search..." 
+                        : (selectedTypes.length ? "Enter destination..." : "Select a story type first")
+                    }
+                    placeholderTextColor={
+                      isNavigating 
+                        ? "rgba(255, 255, 255, 0.2)" 
+                        : (selectedTypes.length ? "rgba(255, 255, 255, 0.4)" : "rgba(255, 255, 255, 0.2)")
+                    }
                     value={destination}
                     onFocus={expandSearchBar}
                     onChangeText={(text) => {
-                      if (selectedTypes.length) {
+                      if (!isNavigating && selectedTypes.length) {
                         setDestination(text);
                         fetchPlacePredictions(text);
                       }
                     }}
-                    editable={selectedTypes.length > 0}
+                    editable={!isNavigating && selectedTypes.length > 0}
                   />
-                  {destination.length > 0 && selectedTypes.length > 0 && (
+                  {destination.length > 0 && !isNavigating && selectedTypes.length > 0 && (
                     <TouchableOpacity 
                       onPress={clearSearch}
                       style={styles.clearButton}
@@ -882,7 +896,7 @@ const TourGuideScreen = ({ navigation }) => {
                   </View>
                 )}
 
-                {showPredictions && predictions.length > 0 && (
+                {showPredictions && predictions.length > 0 && !isNavigating && (
                   <ScrollView style={styles.predictionsContainer}>
                     {predictions.map((prediction) => (
                       <TouchableOpacity
@@ -916,17 +930,24 @@ const TourGuideScreen = ({ navigation }) => {
                       style={[
                         styles.typeButton,
                         selectedTypes.includes(type) && styles.selectedType,
+                        isNavigating && styles.disabledTypeButton
                       ]}
                       onPress={() => toggleStoryType(type)}
+                      disabled={isNavigating}
                     >
                       <MaterialIcons 
                         name={STORY_TYPE_INFO[type].icon} 
                         size={20} 
-                        color={selectedTypes.includes(type) ? '#fff' : 'rgba(255, 255, 255, 0.6)'} 
+                        color={
+                          isNavigating 
+                            ? 'rgba(255, 255, 255, 0.2)' 
+                            : (selectedTypes.includes(type) ? '#fff' : 'rgba(255, 255, 255, 0.6)')
+                        } 
                       />
                       <Text style={[
                         styles.typeText,
                         selectedTypes.includes(type) && styles.selectedTypeText,
+                        isNavigating && styles.disabledTypeText
                       ]}>
                         {STORY_TYPE_INFO[type].label}
                       </Text>
@@ -1023,6 +1044,15 @@ const TourGuideScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // Previous styles remain the same...
+  
+  disabledTypeButton: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  disabledTypeText: {
+    color: 'rgba(255, 255, 255, 0.2)',
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
