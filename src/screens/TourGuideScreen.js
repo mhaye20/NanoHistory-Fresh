@@ -90,6 +90,8 @@ const TourGuideScreen = ({ navigation }) => {
   const searchBarHeight = useRef(new Animated.Value(1)).current;
   const [isInitialLocationSet, setIsInitialLocationSet] = useState(false);
   const [mapKey, setMapKey] = useState(0);
+  const [mapRegion, setMapRegion] = useState(null);
+  const lastRegionRef = useRef(null);
 
   const toggleSearchBar = () => {
     const toValue = isSearchExpanded ? 0 : 1;
@@ -704,7 +706,7 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-return (
+  return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.mapContainer}>
@@ -717,6 +719,11 @@ return (
                 ...currentLocation,
                 latitudeDelta: 0.0922,
                 longitudeDelta: 0.0421,
+              }}
+              region={mapRegion}
+              onRegionChangeComplete={(region) => {
+                lastRegionRef.current = region;
+                setMapRegion(null);
               }}
               zoomEnabled={!isHeadTrackingEnabled || !isNavigating}
               scrollEnabled={!isHeadTrackingEnabled || !isNavigating}
