@@ -14,7 +14,8 @@ import {
   Alert,
   Modal,
   ScrollView,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -243,9 +244,10 @@ const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect
 
 const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
-  const [filteredLocations, setFilteredLocations] = useState([]); // New state for filtered results
-  const [allLocations, setAllLocations] = useState([]); // New state to store all locations
+  const [filteredLocations, setFilteredLocations] = useState([]);
+  const [allLocations, setAllLocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false); // New state for filter loading
   const [error, setError] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState(route.params?.source === 'swipe' ? 'nearby' : 'all');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
@@ -429,27 +431,33 @@ const ExploreScreen = ({ navigation, route }) => {
 
   const handleLocationSelect = async (prediction) => {
     try {
+      Keyboard.dismiss();
       setLoading(true);
       setShowPredictions(false);
       setCustomLocation(prediction.description);
+      setFilterLoading(true); // Show filter loading
 
       const { lat, lng } = prediction.geometry.location;
       setCurrentCoords({ latitude: lat, longitude: lng });
-      fetchNearbyLocations(false, { latitude: lat, longitude: lng });
+      await fetchNearbyLocations(false, { latitude: lat, longitude: lng });
     } catch (err) {
       console.error('Error selecting location:', err);
       Alert.alert('Error', 'Failed to get location details');
     } finally {
       setLoading(false);
+      setFilterLoading(false); // Hide filter loading
     }
   };
 
   const handleLocalLocationSelect = (location) => {
+    Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowPredictions(false);
     setCustomLocation('');
+    setFilterLoading(true); // Show filter loading
     handleLocationPress(location);
-  };
+    setFilterLoading(false); // Hide filter loading
+    };
 
   const searchLocation = async () => {
     if (!customLocation.trim()) {
@@ -922,37 +930,44 @@ const ExploreScreen = ({ navigation, route }) => {
           )}
         </BlurView>
 
-        <Animated.FlatList
-          data={filteredLocations}  // Changed from locations to filteredLocations
-          renderItem={({ item, index }) => (
-            <LocationCard
-              location={item}
-              onPress={() => handleLocationPress(item)}
-              onARPress={() => handleARPress(item)}
-              index={index}
-              scrollX={scrollX}
-            />
-          )}
-          keyExtractor={(item) => item.id.toString()}
-          horizontal
-          pagingEnabled
-          snapToInterval={CARD_WIDTH + SPACING * 2}
-          decelerationRate="fast"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: true }
-          )}
-          scrollEventThrottle={16}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialIcons name="search-off" size={48} color="rgba(255, 255, 255, 0.6)" />
-              <Text style={styles.emptyText}>No locations found</Text>
-              <Text style={styles.emptySubtext}>Try a different filter or explore another area</Text>
-            </View>
-          }
-        />
+        {filterLoading ? (
+          <View style={styles.filterLoadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.filterLoadingText}>Filtering stories...</Text>
+          </View>
+        ) : (
+          <Animated.FlatList
+            data={filteredLocations}
+            renderItem={({ item, index }) => (
+              <LocationCard
+                location={item}
+                onPress={() => handleLocationPress(item)}
+                onARPress={() => handleARPress(item)}
+                index={index}
+                scrollX={scrollX}
+              />
+            )}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal
+            pagingEnabled
+            snapToInterval={CARD_WIDTH + SPACING * 2}
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: true }
+            )}
+            scrollEventThrottle={16}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="search-off" size={48} color="rgba(255, 255, 255, 0.6)" />
+                <Text style={styles.emptyText}>No locations found</Text>
+                <Text style={styles.emptySubtext}>Try a different filter or explore another area</Text>
+              </View>
+            }
+          />
+        )}
 
         {filterButtons.map((filter) => (
           <FilterModal
@@ -1426,6 +1441,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     opacity: 0.9,
+  },
+  filterLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  filterLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#e2e8f0',
+    textAlign: 'center',
   },
 });
 
