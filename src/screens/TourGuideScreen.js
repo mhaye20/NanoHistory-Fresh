@@ -415,11 +415,11 @@ const TourGuideScreen = ({ navigation }) => {
         throw new Error('Current location not available');
       }
 
+      // Pass only selectedTypes to generateTourRoute, not filteredWaypoints
       const newRoute = await tourGuideService.generateTourRoute(
         currentLocation,
         destinationLocation,
-        selectedTypes.length > 0 ? selectedTypes : ['all'],
-        filteredWaypoints // Pass filtered waypoints instead of all waypoints
+        selectedTypes.length > 0 ? selectedTypes : ['all']
       );
 
       if (!newRoute?.coordinates?.length) {

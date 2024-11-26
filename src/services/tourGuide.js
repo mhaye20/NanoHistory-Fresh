@@ -35,8 +35,28 @@ class TourGuideService {
 
   async generateTourRoute(startLocation, endLocation, selectedTypes) {
     try {
-      // Get historical points between start and end locations
-      const { data: historicalPoints, error } = await supabase
+      // First get all ai_generated_stories to ensure we have the story types
+      const { data: aiStories, error: aiError } = await supabase
+        .from('ai_generated_stories')
+        .select('*');
+
+      if (aiError) {
+        console.error('Error fetching AI stories:', aiError);
+        return;
+      }
+
+      // Create a map of location_id to story types for quick lookup
+      const storyTypesMap = aiStories.reduce((acc, story) => {
+        if (story.location_id && Array.isArray(story.story_types)) {
+          acc[story.location_id] = story.story_types;
+        }
+        return acc;
+      }, {});
+
+      console.log('Story types map:', storyTypesMap);
+
+      // Get all locations with their AI stories
+      const { data: historicalPoints, error: locationsError } = await supabase
         .from('locations')
         .select(`
           *,
@@ -46,15 +66,68 @@ class TourGuideService {
           )
         `);
 
-      if (error) throw error;
+      if (locationsError) throw locationsError;
+
+      // Transform locations with proper story types
+      const transformedPoints = historicalPoints.map(location => {
+        const aiStory = location.ai_generated_stories?.[0];
+        // Try to get story types from our map first, then fall back to the AI story
+        const storyTypes = storyTypesMap[location.id] || aiStory?.story_types || [];
+
+        return {
+          id: location.id,
+          title: location.title,
+          description: location.description,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          story: aiStory?.content,
+          story_types: storyTypes,
+          ai_generated_stories: location.ai_generated_stories
+        };
+      });
 
       // Filter points by story types
-      const filteredPoints = historicalPoints.filter(location => {
-        const aiStory = location.ai_generated_stories?.[0];
-        const storyTypes = aiStory?.story_types || [];
-        
-        return selectedTypes.includes('all') || 
-          storyTypes.some(type => selectedTypes.includes(type));
+      const filteredPoints = transformedPoints.filter(location => {
+        if (!Array.isArray(location.story_types)) return false;
+
+        // Convert camelCase to snake_case for comparison
+        const normalizeType = (type) => {
+          return type.toLowerCase().replace(/([a-z])([A-Z])/g, '$1_$2');
+        };
+
+        const normalizedPointTypes = location.story_types.map(normalizeType);
+        const normalizedSelectedTypes = selectedTypes.map(normalizeType);
+
+        console.log('Comparing types for location:', {
+          id: location.id,
+          title: location.title,
+          originalTypes: location.story_types,
+          normalizedPointTypes,
+          normalizedSelectedTypes
+        });
+
+        const matches = selectedTypes.includes('all') || 
+          normalizedSelectedTypes.some(selectedType => 
+            normalizedPointTypes.includes(selectedType)
+          );
+
+        console.log('Location match result:', {
+          id: location.id,
+          title: location.title,
+          matches
+        });
+
+        return matches;
+      });
+
+      console.log('Filtered points for route:', {
+        total: filteredPoints.length,
+        selectedTypes,
+        points: filteredPoints.map(p => ({
+          id: p.id,
+          title: p.title,
+          story_types: p.story_types
+        }))
       });
 
       // Enhanced point selection along route
@@ -63,6 +136,15 @@ class TourGuideService {
         endLocation,
         filteredPoints
       );
+
+      console.log('Selected waypoints:', {
+        total: routePoints.length,
+        points: routePoints.map(p => ({
+          id: p.id,
+          title: p.title,
+          story_types: p.story_types
+        }))
+      });
 
       // Get route directions from Google Maps API
       const waypointsParam = routePoints.length > 0 ? 
@@ -137,23 +219,7 @@ class TourGuideService {
 
       // Transform points to include story content and generate audio
       const orderedRoutePoints = waypointOrder.map(index => routePoints[index]);
-      const transformedPoints = await Promise.all(orderedRoutePoints.map(async point => {
-        const story = point.ai_generated_stories?.[0]?.content;
-        const audioContent = story ? await generateVoice(
-          `You are now approaching ${point.title}. ${story}`
-        ) : null;
-
-        return {
-          id: point.id,
-          title: point.title,
-          description: point.description,
-          latitude: point.latitude,
-          longitude: point.longitude,
-          story,
-          story_types: point.ai_generated_stories?.[0]?.story_types || [],
-          audioUrl: audioContent?.audioUrl
-        };
-      }));
+      
 
       // Generate route with waypoints, path, and instructions
       const route = {
