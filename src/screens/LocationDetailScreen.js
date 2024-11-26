@@ -517,7 +517,7 @@ const LocationDetailScreen = ({ route, navigation }) => {
     );
   }
 
-  const storyImageUrl = details?.aiGeneratedStory?.imageUrl || aiStory?.imageUrl;
+  const storyImageUrl = details?.imageUrl || location?.imageUrl;
 
   return (
     <SafeAreaView style={styles.container}>

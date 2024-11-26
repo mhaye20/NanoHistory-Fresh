@@ -7,236 +7,205 @@ const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY
 );
 
-const SIMILARITY_THRESHOLD = 0.6; // 60% similarity threshold
+// Constants for location matching
+const TITLE_SIMILARITY_THRESHOLD = 0.9; // Very high threshold for title similarity
+const PAGE_SIZE = 1000; // Supabase's max page size
+const DRY_RUN = false; // Set to false to perform actual deletions
 
-// Common word variations to normalize
-const WORD_VARIATIONS = {
-  'hospital': ['medical center', 'medical', 'healthcare center', 'health center'],
-  'theater': ['theatre'],
-  'museum': ['gallery', 'exhibition'],
-  'church': ['cathedral', 'chapel', 'parish'],
-  'park': ['gardens', 'garden', 'recreational area'],
-  'building': ['tower', 'complex', 'center', 'centre'],
-  'house': ['home', 'mansion', 'residence'],
-  'library': ['public library', 'reading room'],
-  'school': ['academy', 'institute', 'education center'],
-  'historic': ['historical', 'heritage'],
-  'centre': ['center']
-};
+async function fetchAllLocations() {
+  let allLocations = [];
+  let page = 0;
+  let hasMore = true;
 
-function normalizeTitle(title) {
-  let normalized = title.toLowerCase();
-  
-  // Replace variations with standard terms
-  for (const [standard, variations] of Object.entries(WORD_VARIATIONS)) {
-    for (const variation of variations) {
-      normalized = normalized.replace(new RegExp(variation, 'gi'), standard);
+  while (hasMore) {
+    const start = page * PAGE_SIZE;
+    const end = start + PAGE_SIZE - 1;
+
+    console.log(`Fetching locations ${start} to ${end}...`);
+
+    const { data: locations, error } = await supabase
+      .from('locations')
+      .select('*')
+      .range(start, end)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (locations.length < PAGE_SIZE) {
+      hasMore = false;
     }
+
+    allLocations = allLocations.concat(locations);
+    page++;
+
+    console.log(`Retrieved ${locations.length} locations`);
   }
-  
-  // Remove common prefixes/suffixes
-  normalized = normalized.replace(/^(the|old|new) /, '');
-  
-  // Remove common punctuation and extra spaces
-  normalized = normalized.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
-  normalized = normalized.replace(/\s+/g, ' ').trim();
-  
-  return normalized;
+
+  return allLocations;
 }
 
-function areSimilarTitles(title1, title2) {
-  const norm1 = normalizeTitle(title1);
-  const norm2 = normalizeTitle(title2);
-  
-  // Direct match after normalization
-  if (norm1 === norm2) return true;
-  
-  // Check string similarity
-  const similarity = stringSimilarity.compareTwoStrings(norm1, norm2);
-  if (similarity > SIMILARITY_THRESHOLD) return true;
-  
-  // Check if one is contained within the other
-  if (norm1.includes(norm2) || norm2.includes(norm1)) return true;
-  
-  return false;
+async function deleteLocationAndRelatedRecords(locationId) {
+  try {
+    // First delete related AI stories
+    const { error: aiStoryError } = await supabase
+      .from('ai_generated_stories')
+      .delete()
+      .eq('location_id', locationId);
+
+    if (aiStoryError) {
+      console.error(`Error deleting AI stories for location ${locationId}:`, aiStoryError);
+      return false;
+    }
+
+    // Then delete related user stories
+    const { error: storyError } = await supabase
+      .from('stories')
+      .delete()
+      .eq('location_id', locationId);
+
+    if (storyError) {
+      console.error(`Error deleting stories for location ${locationId}:`, storyError);
+      return false;
+    }
+
+    // Then delete related user actions
+    const { error: actionError } = await supabase
+      .from('user_actions')
+      .delete()
+      .eq('location_id', locationId);
+
+    if (actionError) {
+      console.error(`Error deleting user actions for location ${locationId}:`, actionError);
+      return false;
+    }
+
+    // Finally delete the location
+    const { error: locationError } = await supabase
+      .from('locations')
+      .delete()
+      .eq('id', locationId);
+
+    if (locationError) {
+      console.error(`Error deleting location ${locationId}:`, locationError);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`Error in deleteLocationAndRelatedRecords for ${locationId}:`, error);
+    return false;
+  }
 }
 
 async function removeDuplicates() {
   try {
-    console.log('Fetching all locations and stories...');
+    console.log('Fetching all locations...');
     
-    // Fetch all locations with their AI stories and related tables
-    const { data: locations, error: locError } = await supabase
-      .from('locations')
-      .select(`
-        *,
-        ai_generated_stories (
-          id,
-          content
-        ),
-        stories (
-          id
-        ),
-        user_actions (
-          id
-        )
-      `);
+    // Fetch all locations with pagination
+    const locations = await fetchAllLocations();
+    console.log(`Found ${locations.length} total locations`);
 
-    if (locError) throw locError;
-
-    console.log(`Found ${locations.length} locations`);
-
-    // Group similar locations
-    const duplicateGroups = [];
-    const processed = new Set();
-
-    for (let i = 0; i < locations.length; i++) {
-      if (processed.has(locations[i].id)) continue;
-      
-      const group = [locations[i]];
-      processed.add(locations[i].id);
-
-      for (let j = i + 1; j < locations.length; j++) {
-        if (processed.has(locations[j].id)) continue;
-
-        const titleSimilar = areSimilarTitles(locations[i].title, locations[j].title);
-        const coordSimilar = Math.abs(locations[i].latitude - locations[j].latitude) < 0.0001 &&
-                            Math.abs(locations[i].longitude - locations[j].longitude) < 0.0001;
-
-        if (titleSimilar || coordSimilar) {
-          group.push(locations[j]);
-          processed.add(locations[j].id);
-        }
+    // First, group locations by exact coordinates
+    const coordGroups = new Map();
+    
+    locations.forEach(loc => {
+      // Use exact coordinates as key
+      const coordKey = `${loc.latitude},${loc.longitude}`;
+      if (!coordGroups.has(coordKey)) {
+        coordGroups.set(coordKey, []);
       }
+      coordGroups.get(coordKey).push(loc);
+    });
 
-      if (group.length > 1) {
-        duplicateGroups.push(group);
+    // Find duplicates within coordinate groups
+    const duplicateGroups = [];
+
+    for (const [coordKey, coordLocations] of coordGroups) {
+      if (coordLocations.length > 1) {
+        console.log(`\nChecking locations at ${coordKey}:`);
+        coordLocations.forEach(loc => {
+          console.log(`- ${loc.title} (${loc.id})`);
+        });
+
+        // Compare titles within this coordinate group
+        for (let i = 0; i < coordLocations.length; i++) {
+          const loc1 = coordLocations[i];
+          const group = [loc1];
+
+          for (let j = i + 1; j < coordLocations.length; j++) {
+            const loc2 = coordLocations[j];
+            
+            // Compare titles
+            const similarity = stringSimilarity.compareTwoStrings(
+              loc1.title.toLowerCase(),
+              loc2.title.toLowerCase()
+            );
+
+            console.log(`\nComparing locations with same coordinates:
+              Location 1: ${loc1.title} (${loc1.id})
+              Location 2: ${loc2.title} (${loc2.id})
+              Title Similarity: ${similarity.toFixed(3)}`);
+
+            if (similarity > TITLE_SIMILARITY_THRESHOLD || loc1.title === loc2.title) {
+              console.log('Found duplicate!');
+              group.push(loc2);
+            }
+          }
+
+          if (group.length > 1) {
+            duplicateGroups.push(group);
+            // Remove these locations from further comparisons
+            coordLocations.splice(i + 1, group.length - 1);
+          }
+        }
       }
     }
 
-    console.log(`Found ${duplicateGroups.length} groups of similar locations`);
+    console.log(`\nFound ${duplicateGroups.length} groups of duplicates`);
 
     // Process each group of duplicates
     for (const group of duplicateGroups) {
-      // Sort by completeness and visit count to find the best entry
+      // Sort by created_at timestamp, newest first
       const sorted = group.sort((a, b) => {
-        const scoreA = calculateCompleteness(a) + (a.visit_count || 0);
-        const scoreB = calculateCompleteness(b) + (b.visit_count || 0);
-        return scoreB - scoreA;
+        const dateA = new Date(a.created_at);
+        const dateB = new Date(b.created_at);
+        return dateB - dateA;
       });
 
       const keeper = sorted[0];
       const duplicates = sorted.slice(1);
       
-      console.log(`\nProcessing group: ${keeper.title}`);
-      console.log(`Keeper ID: ${keeper.id}`);
-      console.log(`Duplicate IDs: ${duplicates.map(d => d.id).join(', ')}`);
+      console.log(`\nDuplicate group found:`);
+      console.log(`Keeping most recent: ${keeper.title} (${keeper.id})`);
+      console.log(`Created: ${keeper.created_at}`);
+      console.log(`Location: ${keeper.latitude}, ${keeper.longitude}`);
+      console.log('Older duplicates to remove:');
+      duplicates.forEach(d => {
+        console.log(`- ${d.title} (${d.id})`);
+        console.log(`  Created: ${d.created_at}`);
+        console.log(`  Location: ${d.latitude}, ${d.longitude}`);
+      });
 
-      // Process each duplicate one at a time
-      for (const duplicate of duplicates) {
-        try {
-          // 1. Get all AI stories
-          const { data: keeperStory } = await supabase
-            .from('ai_generated_stories')
-            .select('content')
-            .eq('location_id', keeper.id)
-            .single();
-
-          const { data: duplicateStory } = await supabase
-            .from('ai_generated_stories')
-            .select('content')
-            .eq('location_id', duplicate.id)
-            .single();
-
-          // 2. Combine AI stories
-          if (keeperStory && duplicateStory) {
-            const combinedContent = `${keeperStory.content}\n\nAdditional History:\n${duplicateStory.content}`;
-            
-            // Update keeper's AI story
-            const { error: updateError } = await supabase
-              .from('ai_generated_stories')
-              .update({ content: combinedContent })
-              .eq('location_id', keeper.id);
-
-            if (updateError) {
-              console.error('Error updating AI story:', updateError);
-              continue;
-            }
-
-            // Delete duplicate's AI story
-            const { error: deleteAiError } = await supabase
-              .from('ai_generated_stories')
-              .delete()
-              .eq('location_id', duplicate.id);
-
-            if (deleteAiError) {
-              console.error('Error deleting AI story:', deleteAiError);
-              continue;
-            }
+      if (!DRY_RUN) {
+        console.log('\nDeleting duplicates...');
+        for (const duplicate of duplicates) {
+          const success = await deleteLocationAndRelatedRecords(duplicate.id);
+          if (success) {
+            console.log(`Successfully deleted: ${duplicate.title} (${duplicate.id})`);
+          } else {
+            console.log(`Failed to delete: ${duplicate.title} (${duplicate.id})`);
           }
-
-          // 3. Move user stories to keeper
-          if (duplicate.stories?.length > 0) {
-            const { error: updateStoriesError } = await supabase
-              .from('stories')
-              .update({ location_id: keeper.id })
-              .eq('location_id', duplicate.id);
-
-            if (updateStoriesError) {
-              console.error('Error updating stories:', updateStoriesError);
-              continue;
-            }
-          }
-
-          // 4. Move user actions to keeper
-          if (duplicate.user_actions?.length > 0) {
-            const { error: updateActionsError } = await supabase
-              .from('user_actions')
-              .update({ location_id: keeper.id })
-              .eq('location_id', duplicate.id);
-
-            if (updateActionsError) {
-              console.error('Error updating user actions:', updateActionsError);
-              continue;
-            }
-          }
-
-          // 5. Delete the duplicate location
-          const { error: deleteError } = await supabase
-            .from('locations')
-            .delete()
-            .eq('id', duplicate.id);
-
-          if (deleteError) {
-            console.error('Error deleting location:', deleteError);
-            continue;
-          }
-
-          console.log(`Successfully processed duplicate: ${duplicate.title} (${duplicate.id})`);
-
-        } catch (error) {
-          console.error(`Error processing duplicate ${duplicate.id}:`, error);
         }
+      } else {
+        console.log('\nDRY RUN - No deletions performed');
       }
     }
 
     console.log('\nDuplicate removal complete!');
 
   } catch (error) {
-    console.error('Error removing duplicates:', error);
+    console.error('Error:', error);
   }
-}
-
-function calculateCompleteness(location) {
-  let score = 0;
-  if (location.title) score++;
-  if (location.description) score++;
-  if (location.image_url) score++;
-  if (location.historical_period) score++;
-  if (location.category) score++;
-  if (location.ai_generated_stories?.length > 0) score += 2;
-  if (location.visit_count > 0) score += location.visit_count;
-  return score;
 }
 
 // Run the script
