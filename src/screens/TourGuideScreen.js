@@ -269,12 +269,10 @@ const TourGuideScreen = ({ navigation }) => {
       return []; // Return empty array if no types selected
     }
     
-    // If 'all' is selected, return all points
+    // If 'all' is selected, return all points without filtering
     if (selectedTypes.includes('all')) {
       console.log('All type selected, returning all points');
-      const allPoints = points || [];
-      console.log('Returning all points:', allPoints.length);
-      return allPoints;
+      return points || [];
     }
 
     const filtered = (points || []).filter(point => {
@@ -313,30 +311,9 @@ const TourGuideScreen = ({ navigation }) => {
     if (type === 'all') {
       // If 'all' is being selected and wasn't previously selected
       if (!selectedTypes.includes('all')) {
-        setIsLoadingWaypoints(true);
-        try {
-          // Set selected types first
-          setSelectedTypes(['all']);
-          
-          // Fetch waypoints
-          await fetchInitialWaypoints();
-          
-          // Add a delay to ensure state updates are processed
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Log the current state
-          console.log('Current waypoints length:', waypoints.length);
-          
-          // Force a re-filter of waypoints after the delay
-          const allPoints = waypoints || [];
-          console.log('Setting filtered waypoints to all points:', allPoints.length);
-          setFilteredWaypoints(allPoints);
-          
-        } catch (error) {
-          console.error('Error toggling story type:', error);
-        } finally {
-          setIsLoadingWaypoints(false);
-        }
+        setSelectedTypes(['all']);
+        // Simply set filtered waypoints to all waypoints
+        setFilteredWaypoints(waypoints);
       } else {
         // If 'all' was already selected, just deselect it
         setSelectedTypes([]);
