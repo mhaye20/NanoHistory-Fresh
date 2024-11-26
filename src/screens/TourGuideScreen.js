@@ -708,6 +708,9 @@ const TourGuideScreen = ({ navigation }) => {
         ...prevRoute,
         coordinates: [],
       }));
+
+      // Expand the search bar overlay
+      setIsSearchExpanded(true);
       
     } catch (error) {
       console.error('Error stopping navigation:', error);
