@@ -106,22 +106,31 @@ const TourGuideScreen = ({ navigation }) => {
     }
   };
 
-  // Add applyFilters function similar to ExploreScreen
-  const applyFilters = useCallback((points, selectedTypes) => {
-    if (!selectedTypes.length) return points;
-
-    return points.filter(point => {
-      if (!Array.isArray(point.story_types)) return false;
-      return selectedTypes.some(selectedType => 
-        point.story_types.includes(selectedType)
-      );
-    });
-  }, []);
-
-  // Modify fetchInitialWaypoints to use filtering
+  // Modify fetchInitialWaypoints to properly handle story types
   const fetchInitialWaypoints = async () => {
     try {
-      const { data: historicalPoints, error } = await supabase
+      // First get all ai_generated_stories to ensure we have the story types
+      const { data: aiStories, error: aiError } = await supabase
+        .from('ai_generated_stories')
+        .select('*');
+
+      if (aiError) {
+        console.error('Error fetching AI stories:', aiError);
+        return;
+      }
+
+      // Create a map of location_id to story types for quick lookup
+      const storyTypesMap = aiStories.reduce((acc, story) => {
+        if (story.location_id && Array.isArray(story.story_types)) {
+          acc[story.location_id] = story.story_types;
+        }
+        return acc;
+      }, {});
+
+      console.log('Story types map:', storyTypesMap);
+
+      // Get all locations with their AI stories
+      const { data: historicalPoints, error: locationsError } = await supabase
         .from('locations')
         .select(`
           *,
@@ -131,17 +140,38 @@ const TourGuideScreen = ({ navigation }) => {
           )
         `);
 
-      if (error) throw error;
+      if (locationsError) throw locationsError;
 
-      const transformedPoints = historicalPoints.map(point => ({
-        id: point.id,
-        title: point.title,
-        description: point.description,
-        latitude: point.latitude,
-        longitude: point.longitude,
-        story: point.ai_generated_stories?.[0]?.content,
-        story_types: point.ai_generated_stories?.[0]?.story_types || []
-      }));
+      // Transform the locations with proper story types
+      const transformedPoints = historicalPoints.map(point => {
+        const aiStory = point.ai_generated_stories?.[0];
+        // Try to get story types from our map first, then fall back to the AI story
+        const storyTypes = storyTypesMap[point.id] || aiStory?.story_types || [];
+
+        console.log('Transforming point:', {
+          id: point.id,
+          title: point.title,
+          storyTypes: JSON.stringify(storyTypes),
+          storyTypesFromMap: storyTypesMap[point.id],
+          storyTypesFromAi: aiStory?.story_types
+        });
+
+        return {
+          id: point.id,
+          title: point.title,
+          description: point.description,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          story: aiStory?.content,
+          story_types: storyTypes
+        };
+      });
+
+      console.log('Transformed points:', transformedPoints.map(p => ({
+        id: p.id,
+        title: p.title,
+        story_types: p.story_types
+      })));
 
       setWaypoints(transformedPoints);
       // Apply filters to waypoints
@@ -151,6 +181,60 @@ const TourGuideScreen = ({ navigation }) => {
       console.error('Error fetching waypoints:', error);
     }
   };
+
+  // Modify applyFilters to match ExploreScreen's approach
+  const applyFilters = useCallback((points, selectedTypes) => {
+    if (!selectedTypes.length) return points;
+
+    console.log('Applying filters:', {
+      selectedTypes,
+      totalPoints: points.length,
+      samplePoint: points[0] ? {
+        id: points[0].id,
+        title: points[0].title,
+        story_types: points[0].story_types
+      } : null
+    });
+
+    const filtered = points.filter(point => {
+      if (!Array.isArray(point.story_types)) {
+        console.log('Point has no story_types array:', point.id);
+        return false;
+      }
+
+      // Normalize story types for comparison
+      const normalizedPointTypes = point.story_types.map(type => 
+        type.toLowerCase().replace(/([A-Z])/g, '_$1')
+      );
+      const normalizedSelectedTypes = selectedTypes.map(type => 
+        type.toLowerCase().replace(/([A-Z])/g, '_$1')
+      );
+
+      console.log('Comparing types for point:', {
+        pointId: point.id,
+        pointTitle: point.title,
+        originalTypes: point.story_types,
+        normalizedPointTypes,
+        normalizedSelectedTypes
+      });
+
+      return normalizedSelectedTypes.some(selectedType => 
+        normalizedPointTypes.includes(selectedType)
+      );
+    });
+
+    console.log('Filter results:', {
+      totalFiltered: filtered.length,
+      filteredPoints: filtered.map(p => ({
+        id: p.id,
+        title: p.title,
+        story_types: p.story_types
+      }))
+    });
+
+    return filtered;
+  }, []);
+  
 
   // Modify toggleStoryType to update filtered waypoints
   const toggleStoryType = (type) => {
