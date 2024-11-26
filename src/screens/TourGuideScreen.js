@@ -79,6 +79,36 @@ const TourGuideScreen = ({ navigation }) => {
   const [currentHeading, setCurrentHeading] = useState(0);
   const [hasCompassPermission, setHasCompassPermission] = useState(false);
 
+  useEffect(() => {
+    const setup = async () => {
+      try {
+        await initializeLocation();
+        await fetchInitialWaypoints();
+        await requestCompassPermission();
+      } catch (error) {
+        console.error('Setup error:', error);
+        Alert.alert(
+          'Setup Error',
+          'Failed to initialize the tour guide. Please check your permissions and try again.'
+        );
+      }
+    };
+
+    setup();
+
+    return () => {
+      if (isNavigating) {
+        stopNavigation();
+      }
+      if (locationSubscription) {
+        locationSubscription.remove();
+      }
+      if (headingSubscription) {
+        headingSubscription.remove();
+      }
+    };
+  }, []);
+
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
       case 'turn-right':
@@ -111,23 +141,6 @@ const TourGuideScreen = ({ navigation }) => {
         return 'arrow-forward';
     }
   };
-
-  useEffect(() => {
-    initializeLocation();
-    fetchInitialWaypoints();
-    requestCompassPermission();
-    return () => {
-      if (isNavigating) {
-        stopNavigation();
-      }
-      if (locationSubscription) {
-        locationSubscription.remove();
-      }
-      if (headingSubscription) {
-        headingSubscription.remove();
-      }
-    };
-  }, []);
 
   const requestCompassPermission = async () => {
     try {
@@ -238,10 +251,14 @@ const TourGuideScreen = ({ navigation }) => {
 
   const handleLocationSelect = async (prediction) => {
     try {
+      if (!prediction?.geometry?.location) {
+        throw new Error('Invalid location data');
+      }
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIsLoading(true);
       setShowPredictions(false);
-      setDestination(prediction.description);
+      setDestination(prediction.description || '');
 
       const { lat, lng } = prediction.geometry.location;
       const destinationLocation = {
@@ -249,33 +266,31 @@ const TourGuideScreen = ({ navigation }) => {
         longitude: lng
       };
 
-      if (currentLocation) {
-        const newRoute = await tourGuideService.generateTourRoute(
-          currentLocation,
-          destinationLocation,
-          selectedTypes.length > 0 ? selectedTypes : ['all']
-        );
+      if (!currentLocation) {
+        throw new Error('Current location not available');
+      }
 
-        console.log('Route data:', {
-          start: newRoute.start,
-          end: newRoute.end,
-          coordinatesCount: newRoute.coordinates?.length,
-          firstCoord: newRoute.coordinates?.[0],
-          lastCoord: newRoute.coordinates?.[newRoute.coordinates?.length - 1]
+      const newRoute = await tourGuideService.generateTourRoute(
+        currentLocation,
+        destinationLocation,
+        selectedTypes.length > 0 ? selectedTypes : ['all']
+      );
+
+      if (!newRoute?.coordinates?.length) {
+        throw new Error('Failed to generate route coordinates');
+      }
+
+      setRoute(newRoute);
+
+      if (mapRef.current) {
+        mapRef.current.fitToCoordinates(newRoute.coordinates, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: true,
         });
-
-        setRoute(newRoute);
-
-        if (mapRef.current && newRoute.coordinates?.length > 0) {
-          mapRef.current.fitToCoordinates(newRoute.coordinates, {
-            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-            animated: true,
-          });
-        }
       }
     } catch (error) {
       console.error('Route error:', error);
-      Alert.alert('Error', 'Failed to generate tour route');
+      Alert.alert('Error', error.message || 'Failed to generate tour route');
     } finally {
       setIsLoading(false);
     }
@@ -425,108 +440,120 @@ const TourGuideScreen = ({ navigation }) => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.mapContainer}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={currentLocation ? {
-            ...currentLocation,
-            latitudeDelta: 0.0922,
-            longitudeDelta: 0.0421,
-          } : null}
-          zoomEnabled={true}
-          scrollEnabled={!isNavigating}
-          pitchEnabled={true}
-          rotateEnabled={true}
-          showsUserLocation={true}
-          showsMyLocationButton={true}
-          showsCompass={true}
-          loadingEnabled={true}
-          moveOnMarkerPress={true}
-          minZoomLevel={1}
-          maxZoomLevel={20}
-          zoomTapEnabled={true}
-          zoomControlEnabled={true}
-          followsUserLocation={isNavigating}
-          followsUserHeading={isNavigating}
-          userLocationAnnotationTitle="You are here"
-          userLocationCalloutEnabled={true}
-          camera={{
-            center: currentLocation,
-            pitch: 60,
-            heading: currentHeading,
-            altitude: 1000,
-            zoom: 17,
-          }}
-        >
-          onUserLocationChange={(event) => {
-            if (isNavigating && event.nativeEvent.coordinate) {
-              const { latitude, longitude } = event.nativeEvent.coordinate;
-              mapRef.current?.animateCamera({
-                center: { latitude, longitude },
-                heading: currentHeading,
-                pitch: 60,
-                zoom: 18,
-                duration: 1000,
-              });
-            }
-          }}
-        >
-          {currentLocation && (
-            <Marker
-              coordinate={currentLocation}
-              title="You are here"
-              pinColor="#3b82f6"
-            />
-          )}
-          {waypoints.map((point, index) => (
-            <Marker
-              key={point.id || index}
-              coordinate={{
-                latitude: point.latitude,
-                longitude: point.longitude,
+        {currentLocation ? (
+          <>
+            <MapView
+              ref={mapRef}
+              style={styles.map}
+              initialRegion={{
+                ...currentLocation,
+                latitudeDelta: 0.0922,
+                longitudeDelta: 0.0421,
               }}
-              title={point.title}
-              description={point.description}
-              pinColor="#10b981"
-            />
-          ))}
-          {route?.end && (
-            <Marker
-              coordinate={route.end}
-              title="Destination"
-              pinColor="#ef4444"
-            />
-          )}
-          {route?.coordinates && route.coordinates.length > 1 && (
-            <Polyline
-              coordinates={route.coordinates.map(coord => ({
-                latitude: Number(coord.latitude),
-                longitude: Number(coord.longitude)
-              }))}
-              strokeColor="#3b82f6"
-              strokeWidth={3}
-              lineDashPattern={[0]}
-              tappable={true}
-              geodesic={true}
-            />
-          )}
-        </MapView>
+              zoomEnabled={true}
+              scrollEnabled={!isNavigating}
+              pitchEnabled={true}
+              rotateEnabled={true}
+              showsUserLocation={true}
+              showsMyLocationButton={true}
+              showsCompass={true}
+              loadingEnabled={true}
+              moveOnMarkerPress={true}
+              minZoomLevel={1}
+              maxZoomLevel={20}
+              zoomTapEnabled={true}
+              zoomControlEnabled={true}
+              followsUserLocation={isNavigating}
+              followsUserHeading={isNavigating}
+              userLocationAnnotationTitle="You are here"
+              userLocationCalloutEnabled={true}
+              onError={(error) => {
+                console.error('MapView error:', error);
+                Alert.alert('Map Error', 'Failed to load the map. Please try again.');
+              }}
+              camera={{
+                center: currentLocation,
+                pitch: 60,
+                heading: currentHeading,
+                altitude: 1000,
+                zoom: 17,
+              }}
+              onUserLocationChange={(event) => {
+                if (isNavigating && event.nativeEvent.coordinate) {
+                  const { latitude, longitude } = event.nativeEvent.coordinate;
+                  mapRef.current?.animateCamera({
+                    center: { latitude, longitude },
+                    heading: currentHeading,
+                    pitch: 60,
+                    zoom: 18,
+                    duration: 1000,
+                  });
+                }
+              }}
+            >
+              {currentLocation && (
+                <Marker
+                  coordinate={currentLocation}
+                  title="You are here"
+                  pinColor="#3b82f6"
+                />
+              )}
+              {waypoints.map((point, index) => (
+                <Marker
+                  key={point.id || index}
+                  coordinate={{
+                    latitude: point.latitude,
+                    longitude: point.longitude,
+                  }}
+                  title={point.title}
+                  description={point.description}
+                  pinColor="#10b981"
+                />
+              ))}
+              {route?.end && (
+                <Marker
+                  coordinate={route.end}
+                  title="Destination"
+                  pinColor="#ef4444"
+                />
+              )}
+              {route?.coordinates && route.coordinates.length > 1 && (
+                <Polyline
+                  coordinates={route.coordinates.map(coord => ({
+                    latitude: Number(coord.latitude),
+                    longitude: Number(coord.longitude)
+                  }))}
+                  strokeColor="#3b82f6"
+                  strokeWidth={3}
+                  lineDashPattern={[0]}
+                  tappable={true}
+                  geodesic={true}
+                />
+              )}
+            </MapView>
 
-        {/* Compass indicator */}
-        {isNavigating && (
-          <View style={styles.compassContainer}>
-            <MaterialIcons 
-              name="navigation" 
-              size={24} 
-              color="#fff"
-              style={[
-                styles.compassIcon,
-                { transform: [{ rotate: `${-currentHeading}deg` }] }
-              ]}
-            />
-            <Text style={styles.compassText}>
-              {Math.round(currentHeading)}°
-            </Text>
+            {/* Compass indicator */}
+            {isNavigating && (
+              <View style={styles.compassContainer}>
+                <MaterialIcons 
+                  name="navigation" 
+                  size={24} 
+                  color="#fff"
+                  style={[
+                    styles.compassIcon,
+                    { transform: [{ rotate: `${-currentHeading}deg` }] }
+                  ]}
+                />
+                <Text style={styles.compassText}>
+                  {Math.round(currentHeading)}°
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.loadingText}>Loading map...</Text>
           </View>
         )}
       </View>
@@ -630,7 +657,7 @@ const TourGuideScreen = ({ navigation }) => {
         {isLoading && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#3b82f6" />
-            <Text style={styles.loadingText}>Generating tour route...</Text>
+            <Text style={styles.loadingText}>Loading map...</Text>
           </View>
         )}
 
