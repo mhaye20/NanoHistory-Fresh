@@ -376,9 +376,9 @@ const TourGuideScreen = ({ navigation }) => {
       const filtered = applyFilters(waypoints, selectedTypes);
       console.log('Setting filtered waypoints:', filtered.length);
       setFilteredWaypoints(filtered);
-      // Force MapView to re-render when filtered waypoints change
-      setMapKey(prev => prev + 1);
     }
+
+    
   }, [waypoints, selectedTypes, applyFilters]);
 
   const getManeuverIcon = (maneuver) => {
@@ -709,7 +709,6 @@ const TourGuideScreen = ({ navigation }) => {
         {currentLocation ? (
           <>
             <MapView
-              key={mapKey} // Add this key prop
               ref={mapRef}
               style={styles.map}
               initialRegion={{
