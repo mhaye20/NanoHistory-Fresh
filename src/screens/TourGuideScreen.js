@@ -15,6 +15,7 @@ import {
   Animated,
   Modal,
 } from 'react-native';
+import DirectionsPanel from '../components/DirectionsPanel';
 import LocationDetailScreen from './LocationDetailScreen';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -28,6 +29,7 @@ import { supabase } from '../services/supabase';
 import env from '../config/env';
 import { debounce } from 'lodash';
 import { useFocusEffect } from '@react-navigation/native';
+import { formatDuration, convertDistance } from '../utils/formatters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STATUSBAR_HEIGHT = StatusBar.currentHeight || 0;
@@ -80,6 +82,8 @@ const TourGuideScreen = ({ navigation }) => {
   const [predictions, setPredictions] = useState([]);
   const [showPredictions, setShowPredictions] = useState(false);
   const [error, setError] = useState(null);
+  const [showDirections, setShowDirections] = useState(false);
+  const [distanceUnit, setDistanceUnit] = useState('km'); // 'km' or 'mi'
   const mapRef = useRef(null);
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [currentInstruction, setCurrentInstruction] = useState(null);
@@ -516,6 +520,8 @@ const TourGuideScreen = ({ navigation }) => {
         throw new Error('Failed to generate route coordinates');
       }
 
+      console.log('Generated route duration:', newRoute.totalDuration);
+
       // Set the route immediately
       setRoute(newRoute);
 
@@ -654,7 +660,7 @@ const TourGuideScreen = ({ navigation }) => {
 
       setNavigationInfo({
         totalDistance: (route.totalDistance / 1000).toFixed(1),
-        totalDuration: Math.round(route.totalDuration / 60)
+        totalDuration: route.totalDuration
       });
       setCurrentInstruction(route.instructions[0]);
 
@@ -1004,28 +1010,38 @@ const TourGuideScreen = ({ navigation }) => {
           </View>
         )}
 
+{isNavigating && (
+  <View style={styles.navigationControls}>
+    <TouchableOpacity
+      style={styles.navigationButton}
+      onPress={() => {
+        setShowDirections(true);
+      }}
+    >
+      <MaterialIcons name="list" size={24} color="#fff" />
+      <Text style={styles.navigationButtonText}>Directions</Text>
+    </TouchableOpacity>
+  </View>
+)}
+
         {route && (
           <BlurView intensity={80} tint="dark" style={styles.navigationContainer}>
             {isNavigating && currentInstruction && (
               <View style={styles.instructionContainer}>
                 <MaterialIcons 
-                  name={currentInstruction.maneuver ? 
-                    getManeuverIcon(currentInstruction.maneuver) : 
-                    'arrow-forward'
-                  } 
+                  name={currentInstruction.maneuver || 'arrow-forward'} 
                   size={24} 
                   color="#fff" 
                 />
-                <Text style={styles.instructionText}>
-                  {currentInstruction.text}
-                </Text>
-                <View style={styles.distanceContainer}>
-                  <Text style={styles.distanceText}>
-                    {currentInstruction.distance}
+                <View style={styles.instructionTextContainer}>
+                  <Text style={styles.instructionText}>
+                    {currentInstruction.text}
                   </Text>
-                  <Text style={styles.durationText}>
-                    {currentInstruction.duration}
-                  </Text>
+                  {currentInstruction.distance_meters && (
+                    <Text style={styles.distanceText}>
+                      {convertDistance(currentInstruction.distance_meters, distanceUnit)}
+                    </Text>
+                  )}
                 </View>
               </View>
             )}
@@ -1033,50 +1049,98 @@ const TourGuideScreen = ({ navigation }) => {
             {isNavigating && navigationInfo && (
               <View style={styles.navigationInfoContainer}>
                 <View style={styles.infoItem}>
-                  <MaterialIcons name="map" size={20} color="#fff" />
+                  <MaterialIcons name="directions-walk" size={20} color="#fff" />
                   <Text style={styles.infoText}>
-                    {navigationInfo.totalDistance} km
+                    {convertDistance(navigationInfo.totalDistance * 1000, distanceUnit)}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setDistanceUnit(distanceUnit === 'km' ? 'mi' : 'km');
+                  }}
+                  style={styles.unitToggle}
+                >
+                  <Text style={styles.unitToggleText}>{distanceUnit.toUpperCase()}</Text>
+                </TouchableOpacity>
                 <View style={styles.infoItem}>
                   <MaterialIcons name="schedule" size={20} color="#fff" />
                   <Text style={styles.infoText}>
-                    {navigationInfo.totalDuration} min
+                    {formatDuration(navigationInfo.totalDuration)}
                   </Text>
                 </View>
               </View>
             )}
 
             {isNavigating && (
-              <View style={styles.trackingModeContainer}>
-                <Text style={styles.trackingModeText}>
-                  Head Tracking Navigation
-                </Text>
-                <Switch
-                  value={isHeadTrackingEnabled}
-                  onValueChange={toggleHeadTracking}
-                  trackColor={{ false: "#767577", true: "#81b0ff" }}
-                  thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
-                />
-              </View>
+              <>
+                <View style={styles.trackingModeContainer}>
+                  <Text style={styles.trackingModeText}>
+                    Head Tracking Navigation
+                  </Text>
+                  <Switch
+                    value={isHeadTrackingEnabled}
+                    onValueChange={toggleHeadTracking}
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
+                  />
+                </View>
+
+                <View style={styles.navigationButtonsContainer}>
+                  <TouchableOpacity
+                    style={[styles.navigationButton, styles.directionsButton]}
+                    onPress={() => setShowDirections(true)}
+                  >
+                    <MaterialIcons name="list" size={24} color="#fff" />
+                    <Text style={styles.navigationButtonText}>
+                      Directions
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.navigationButton, styles.stopButton]}
+                    onPress={stopNavigation}
+                  >
+                    <MaterialIcons name="stop" size={24} color="#fff" />
+                    <Text style={styles.navigationButtonText}>
+                      Stop Navigation
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
 
-            <TouchableOpacity
-              style={[styles.navigationButton, isNavigating && styles.stopButton]}
-              onPress={isNavigating ? stopNavigation : startNavigation}
-            >
-              <MaterialIcons 
-                name={isNavigating ? "stop" : "navigation"} 
-                size={24} 
-                color="#fff" 
-              />
-              <Text style={styles.navigationButtonText}>
-                {isNavigating ? 'Stop Navigation' : 'Start Navigation'}
-              </Text>
-            </TouchableOpacity>
+            {!isNavigating && (
+              <TouchableOpacity
+                style={styles.navigationButton}
+                onPress={startNavigation}
+              >
+                <MaterialIcons name="navigation" size={24} color="#fff" />
+                <Text style={styles.navigationButtonText}>
+                  Start Navigation
+                </Text>
+              </TouchableOpacity>
+            )}
           </BlurView>
         )}
       </SafeAreaView>
+
+      {showDirections && route && (
+        <DirectionsPanel
+          visible={showDirections}
+          onClose={() => setShowDirections(false)}
+          route={{
+            ...route,
+            totalDistance: route?.totalDistance ? parseFloat(route.totalDistance) : 0,
+            instructions: route?.instructions?.map(instruction => ({
+              ...instruction,
+              distance: instruction.distance ? parseFloat(instruction.distance) : 0,
+              duration: instruction.duration_seconds || 0
+            })) || []
+          }}
+          initialUnit={distanceUnit}
+        />
+      )}
 
       <Modal
         visible={selectedWaypoint !== null}
@@ -1309,13 +1373,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+  navigationButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   navigationButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#3b82f6',
     paddingVertical: 12,
+    borderRadius: 8,
     gap: 6,
+  },
+  directionsButton: {
+    backgroundColor: '#3b82f6',
   },
   stopButton: {
     backgroundColor: '#ef4444',
@@ -1334,24 +1408,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 10,
   },
-  instructionText: {
+  instructionTextContainer: {
     flex: 1,
+  },
+  instructionText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '500',
-  },
-  distanceContainer: {
-    alignItems: 'flex-end',
   },
   distanceText: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
-  },
-  durationText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 11,
-    marginTop: 1,
   },
   navigationInfoContainer: {
     flexDirection: 'row',
@@ -1387,6 +1455,25 @@ const styles = StyleSheet.create({
   },
   disabledInput: {
     color: 'rgba(255, 255, 255, 0.2)',
+  },
+  navigationControls: {
+    position: 'absolute',
+    bottom: 32,
+    right: 16,
+    flexDirection: 'column',
+    gap: 12,
+  },
+  unitToggle: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginHorizontal: 8,
+  },
+  unitToggleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

@@ -270,8 +270,10 @@ class TourGuideService {
 
           instructions.push({
             text: step.html_instructions.replace(/<[^>]*>/g, ''),
-            distance: step.distance.text,
-            duration: step.duration.text,
+            distance: typeof step.distance === 'object' ? step.distance.text : (step.distance || '0.1 km'),
+            distance_meters: step.distance?.value || 0,
+            duration: typeof step.duration === 'object' ? step.duration.text : (step.duration || '1 min'),
+            duration_seconds: step.duration?.value || 0,
             maneuver: step.maneuver,
           });
         });
@@ -297,6 +299,13 @@ class TourGuideService {
       const orderedRoutePoints = waypointOrder.map(index => routePoints[index]);
 
       // Generate route with waypoints, path, and instructions
+      const totalDuration = directionsData.routes[0].legs.reduce((acc, leg) => {
+        console.log('Leg duration:', leg.duration);
+        return acc + (leg.duration?.value || 0);
+      }, 0);
+
+      console.log('Total duration in seconds:', totalDuration);
+
       const route = {
         start: startLocation,
         end: endLocation,
@@ -305,7 +314,8 @@ class TourGuideService {
         instructions,
         storyTypes: selectedTypes,
         totalDistance: directionsData.routes[0].legs.reduce((acc, leg) => acc + leg.distance.value, 0),
-        totalDuration: directionsData.routes[0].legs.reduce((acc, leg) => acc + leg.duration.value, 0)
+        totalDistanceText: directionsData.routes[0].legs.reduce((acc, leg) => acc + parseFloat(leg.distance.text.replace(' km', '')), 0).toFixed(1) + ' km',
+        totalDuration: totalDuration
       };
 
       // Log route data for debugging
