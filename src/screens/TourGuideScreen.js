@@ -99,34 +99,6 @@ const TourGuideScreen = ({ navigation }) => {
   const [mapRegion, setMapRegion] = useState(null);
   const lastRegionRef = useRef(null);
   const [selectedWaypoint, setSelectedWaypoint] = useState(null);
-  const [isEditingWaypoints, setIsEditingWaypoints] = useState(false);
-  const [temporaryWaypoints, setTemporaryWaypoints] = useState([]);
-  const [showWaypointMenu, setShowWaypointMenu] = useState(false);
-  const [showLocationDetails, setShowLocationDetails] = useState(false);
-
-  const normalizeWaypoint = (waypoint) => {
-    // If waypoint has coordinate object, extract lat/lng
-    if (waypoint.coordinate) {
-      return {
-        ...waypoint,
-        latitude: waypoint.coordinate.latitude,
-        longitude: waypoint.coordinate.longitude,
-        // Keep coordinate for map markers
-        coordinate: waypoint.coordinate
-      };
-    }
-    // If waypoint has direct lat/lng, create coordinate object
-    else if (waypoint.latitude && waypoint.longitude) {
-      return {
-        ...waypoint,
-        coordinate: {
-          latitude: waypoint.latitude,
-          longitude: waypoint.longitude
-        }
-      };
-    }
-    return waypoint;
-  };
 
   const toggleSearchBar = () => {
     const toValue = isSearchExpanded ? 0 : 1;
@@ -418,12 +390,6 @@ const TourGuideScreen = ({ navigation }) => {
 
     
   }, [waypoints, selectedTypes, applyFilters]);
-
-  useEffect(() => {
-    if (route) {
-      setTemporaryWaypoints(waypoints);
-    }
-  }, [route]);
 
   const getManeuverIcon = (maneuver) => {
     switch (maneuver) {
@@ -773,111 +739,6 @@ const TourGuideScreen = ({ navigation }) => {
     navigation.goBack();
   };
 
-  const handleMapPress = async (event) => {
-    if (!isEditingWaypoints) return;
-    
-    const { coordinate } = event.nativeEvent;
-    const newWaypoint = normalizeWaypoint({
-      id: `temp-${Date.now()}`,
-      coordinate,
-      title: `Waypoint ${temporaryWaypoints.length + 1}`,
-    });
-    
-    setTemporaryWaypoints([...temporaryWaypoints, newWaypoint]);
-  };
-
-  const removeWaypoint = (waypointId) => {
-    setTemporaryWaypoints(temporaryWaypoints.filter(wp => wp.id !== waypointId));
-  };
-
-  const saveModifiedRoute = async () => {
-    setIsLoading(true);
-    try {
-      // Get the destination coordinates from the current route's end
-      const destinationCoords = route?.end || destination;
-      
-      if (!temporaryWaypoints || temporaryWaypoints.length === 0) {
-        throw new Error('No waypoints selected for the route');
-      }
-
-      // Normalize all waypoints before sending
-      const normalizedWaypoints = temporaryWaypoints.map(normalizeWaypoint);
-
-      // Log waypoints for debugging
-      console.log('Saving route with normalized waypoints:', normalizedWaypoints);
-      
-      // Recalculate route with new waypoints
-      const newRoute = await tourGuideService.generateTourRoute(
-        currentLocation,
-        destinationCoords,
-        selectedTypes,
-        normalizedWaypoints // Pass only our selected waypoints
-      );
-
-      if (!newRoute) {
-        throw new Error('Failed to generate new route');
-      }
-
-      // Use the original normalized waypoints in the route
-      newRoute.waypoints = normalizedWaypoints;
-      
-      setRoute(newRoute);
-      setWaypoints(normalizedWaypoints);
-      setIsEditingWaypoints(false);
-    } catch (error) {
-      console.error('Error updating route:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to update route with new waypoints. Please try again.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const cancelWaypointEditing = () => {
-    setTemporaryWaypoints(waypoints);
-    setIsEditingWaypoints(false);
-  };
-
-  const isWaypointInRoute = (waypoint) => {
-    if (!waypoint) return false;
-    return temporaryWaypoints.some(wp => wp.id === waypoint.id);
-  };
-
-  const handleWaypointPress = (waypoint) => {
-    if (!waypoint) return;
-    setSelectedWaypoint(waypoint);
-    setShowWaypointMenu(true);
-  };
-
-  const handleViewDetails = () => {
-    setShowWaypointMenu(false);
-    setShowLocationDetails(true);
-  };
-
-  const closeLocationDetails = () => {
-    setShowLocationDetails(false);
-    setSelectedWaypoint(null);
-  };
-
-  const handleAddToRoute = () => {
-    if (!selectedWaypoint) return;
-    
-    const normalizedWaypoint = normalizeWaypoint(selectedWaypoint);
-    setTemporaryWaypoints([...temporaryWaypoints, normalizedWaypoint]);
-    setShowWaypointMenu(false);
-    setSelectedWaypoint(null);
-  };
-
-  const handleRemoveFromRoute = () => {
-    if (!selectedWaypoint) return;
-    
-    setTemporaryWaypoints(temporaryWaypoints.filter(wp => wp.id !== selectedWaypoint.id));
-    setShowWaypointMenu(false);
-    setSelectedWaypoint(null);
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -937,7 +798,6 @@ const TourGuideScreen = ({ navigation }) => {
                   });
                 }
               }}
-              onPress={handleMapPress}
             >
               {currentLocation && (
                 <Marker
@@ -956,7 +816,10 @@ const TourGuideScreen = ({ navigation }) => {
                   title={point.title}
                   description={point.description}
                   pinColor="#10b981"
-                  onPress={() => handleWaypointPress(point)}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedWaypoint(point);
+                  }}
                 />
               ))}
               {route?.end && (
@@ -979,21 +842,6 @@ const TourGuideScreen = ({ navigation }) => {
                   geodesic={true}
                 />
               )}
-              {isEditingWaypoints ? temporaryWaypoints.map((waypoint, index) => (
-                <Marker
-                  key={waypoint.id}
-                  coordinate={waypoint.coordinate}
-                  title={waypoint.title}
-                  pinColor="#FF6B6B"
-                >
-                  <TouchableOpacity
-                    style={styles.removeWaypointButton}
-                    onPress={() => removeWaypoint(waypoint.id)}
-                  >
-                    <MaterialIcons name="remove-circle" size={24} color="#FF4444" />
-                  </TouchableOpacity>
-                </Marker>
-              )) : null}
             </MapView>
 
             {isLoadingWaypoints && (
@@ -1177,34 +1025,103 @@ const TourGuideScreen = ({ navigation }) => {
 )}
 
         {route && (
-          <View style={styles.editButtonsContainer}>
-            {!isEditingWaypoints ? (
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={() => setIsEditingWaypoints(true)}
-              >
-                <MaterialIcons name="edit-location" size={24} color="white" />
-                <Text style={styles.editButtonText}>Modify Route</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.editingButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.editButton, styles.cancelButton]}
-                  onPress={cancelWaypointEditing}
-                >
-                  <MaterialIcons name="close" size={24} color="white" />
-                  <Text style={styles.editButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.editButton, styles.saveButton]}
-                  onPress={saveModifiedRoute}
-                >
-                  <MaterialIcons name="check" size={24} color="white" />
-                  <Text style={styles.editButtonText}>Save Route</Text>
-                </TouchableOpacity>
+          <BlurView intensity={80} tint="dark" style={styles.navigationContainer}>
+            {isNavigating && currentInstruction && (
+              <View style={styles.instructionContainer}>
+                <MaterialIcons 
+                  name={currentInstruction.maneuver || 'arrow-forward'} 
+                  size={24} 
+                  color="#fff" 
+                />
+                <View style={styles.instructionTextContainer}>
+                  <Text style={styles.instructionText}>
+                    {currentInstruction.text}
+                  </Text>
+                  {currentInstruction.distance_meters && (
+                    <Text style={styles.distanceText}>
+                      {convertDistance(currentInstruction.distance_meters, distanceUnit)}
+                    </Text>
+                  )}
+                </View>
               </View>
             )}
-          </View>
+
+            {isNavigating && navigationInfo && (
+              <View style={styles.navigationInfoContainer}>
+                <View style={styles.infoItem}>
+                  <MaterialIcons name="directions-walk" size={20} color="#fff" />
+                  <Text style={styles.infoText}>
+                    {convertDistance(navigationInfo.totalDistance * 1000, distanceUnit)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setDistanceUnit(distanceUnit === 'km' ? 'mi' : 'km');
+                  }}
+                  style={styles.unitToggle}
+                >
+                  <Text style={styles.unitToggleText}>{distanceUnit.toUpperCase()}</Text>
+                </TouchableOpacity>
+                <View style={styles.infoItem}>
+                  <MaterialIcons name="schedule" size={20} color="#fff" />
+                  <Text style={styles.infoText}>
+                    {formatDuration(navigationInfo.totalDuration)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {isNavigating && (
+              <>
+                <View style={styles.trackingModeContainer}>
+                  <Text style={styles.trackingModeText}>
+                    Head Tracking Navigation
+                  </Text>
+                  <Switch
+                    value={isHeadTrackingEnabled}
+                    onValueChange={toggleHeadTracking}
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={isHeadTrackingEnabled ? "#3b82f6" : "#f4f3f4"}
+                  />
+                </View>
+
+                <View style={styles.navigationButtonsContainer}>
+                  <TouchableOpacity
+                    style={[styles.navigationButton, styles.directionsButton]}
+                    onPress={() => setShowDirections(true)}
+                  >
+                    <MaterialIcons name="list" size={24} color="#fff" />
+                    <Text style={styles.navigationButtonText}>
+                      Directions
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.navigationButton, styles.stopButton]}
+                    onPress={stopNavigation}
+                  >
+                    <MaterialIcons name="stop" size={24} color="#fff" />
+                    <Text style={styles.navigationButtonText}>
+                      Stop Navigation
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {!isNavigating && (
+              <TouchableOpacity
+                style={styles.navigationButton}
+                onPress={startNavigation}
+              >
+                <MaterialIcons name="navigation" size={24} color="#fff" />
+                <Text style={styles.navigationButtonText}>
+                  Start Navigation
+                </Text>
+              </TouchableOpacity>
+            )}
+          </BlurView>
         )}
       </SafeAreaView>
 
@@ -1226,63 +1143,22 @@ const TourGuideScreen = ({ navigation }) => {
       )}
 
       <Modal
-        visible={showWaypointMenu}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowWaypointMenu(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
-          onPress={() => setShowWaypointMenu(false)}
-        >
-          <BlurView intensity={80} tint="dark" style={styles.waypointMenu}>
-            <TouchableOpacity 
-              style={styles.waypointMenuItem}
-              onPress={handleViewDetails}
-            >
-              <MaterialIcons name="info" size={24} color="#fff" />
-              <Text style={styles.waypointMenuText}>View Details</Text>
-            </TouchableOpacity>
-
-            {route && (
-              isWaypointInRoute(selectedWaypoint) ? (
-                <TouchableOpacity 
-                  style={styles.waypointMenuItem}
-                  onPress={handleRemoveFromRoute}
-                >
-                  <MaterialIcons name="remove-circle" size={24} color="#ef4444" />
-                  <Text style={[styles.waypointMenuText, { color: '#ef4444' }]}>Remove from Route</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.waypointMenuItem}
-                  onPress={handleAddToRoute}
-                >
-                  <MaterialIcons name="add-circle" size={24} color="#10b981" />
-                  <Text style={[styles.waypointMenuText, { color: '#10b981' }]}>Add to Route</Text>
-                </TouchableOpacity>
-              )
-            )}
-          </BlurView>
-        </TouchableOpacity>
-      </Modal>
-
-      <Modal
-        visible={showLocationDetails}
+        visible={selectedWaypoint !== null}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={closeLocationDetails}
+        onRequestClose={() => setSelectedWaypoint(null)}
       >
-        {selectedWaypoint && (
-          <LocationDetailScreen
-            route={{ params: { location: selectedWaypoint } }}
-            navigation={{
-              goBack: closeLocationDetails,
-              navigate: navigation.navigate
-            }}
-          />
-        )}
+        <View style={styles.modalContent}>
+          {selectedWaypoint && (
+            <LocationDetailScreen
+              route={{ params: { location: selectedWaypoint } }}
+              navigation={{
+                ...navigation,
+                goBack: () => setSelectedWaypoint(null)
+              }}
+            />
+          )}
+        </View>
       </Modal>
 
     </View>
@@ -1598,73 +1474,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
-  },
-  editButtonsContainer: {
-    position: 'absolute',
-    bottom: 120,
-    width: '100%',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2196F3',
-    padding: 12,
-    borderRadius: 25,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  editButtonText: {
-    color: 'white',
-    marginLeft: 8,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  editingButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  cancelButton: {
-    backgroundColor: '#FF6B6B',
-  },
-  saveButton: {
-    backgroundColor: '#4CAF50',
-  },
-  removeWaypointButton: {
-    position: 'absolute',
-    top: -30,
-    right: -10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  waypointMenu: {
-    width: 200,
-    padding: 10,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  waypointMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderRadius: 8,
-    marginVertical: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  waypointMenuText: {
-    color: '#fff',
-    marginLeft: 10,
-    fontSize: 16,
-    fontWeight: '500',
   },
 });
 
