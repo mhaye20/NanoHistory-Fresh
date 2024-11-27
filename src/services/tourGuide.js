@@ -73,7 +73,7 @@ class TourGuideService {
       }).then(accurateLocation => {
         this.lastKnownLocation = {
           latitude: accurateLocation.coords.latitude,
-          longitude: accurateLocation.coords.longitude
+          longitude: accurateLocation.longitude
         };
         this.saveCachedLocation(accurateLocation);
       }).catch(error => {
@@ -110,317 +110,380 @@ class TourGuideService {
     }
   }
 
-  async generateTourRoute(startLocation, endLocation, selectedTypes) {
+  async generateTourRoute(startLocation, endLocation, selectedTypes, customWaypoints = null) {
     try {
-      // First get all ai_generated_stories to ensure we have the story types
-      const { data: aiStories, error: aiError } = await supabase
-        .from('ai_generated_stories')
-        .select('*');
+      let routePoints;
+      
+      if (customWaypoints) {
+        // Ensure waypoints have required properties
+        routePoints = customWaypoints.map(wp => {
+          const latitude = wp.coordinate ? wp.coordinate.latitude : wp.latitude;
+          const longitude = wp.coordinate ? wp.coordinate.longitude : wp.longitude;
+          
+          console.log('Processing waypoint:', {
+            original: wp,
+            extracted: { latitude, longitude }
+          });
+          
+          return {
+            ...wp,
+            latitude: typeof latitude === 'string' ? parseFloat(latitude) : latitude,
+            longitude: typeof longitude === 'string' ? parseFloat(longitude) : longitude
+          };
+        }).filter(wp => {
+          const isValid = !isNaN(wp.latitude) && !isNaN(wp.longitude);
+          if (!isValid) {
+            console.warn('Invalid waypoint filtered out:', wp);
+          }
+          return isValid;
+        });
+      } else {
+        // Get all locations with their AI stories
+        const { data: historicalPoints, error: locationsError } = await supabase
+          .from('locations')
+          .select(`
+            *,
+            ai_generated_stories (
+              content,
+              story_types
+            )
+          `);
 
-      if (aiError) {
-        console.error('Error fetching AI stories:', aiError);
-        return;
-      }
+        if (locationsError) throw locationsError;
 
-      // Create a map of location_id to story types for quick lookup
-      const storyTypesMap = aiStories.reduce((acc, story) => {
-        if (story.location_id && Array.isArray(story.story_types)) {
-          acc[story.location_id] = story.story_types;
+        // Transform and filter points based on selected types
+        const eligiblePoints = historicalPoints
+          .filter(location => {
+            const storyTypes = location.ai_generated_stories?.[0]?.story_types || [];
+            return selectedTypes.includes('all') || 
+                   storyTypes.some(type => selectedTypes.includes(type.toLowerCase()));
+          })
+          .map(location => ({
+            ...location,
+            story: location.ai_generated_stories?.[0]?.content,
+            story_types: location.ai_generated_stories?.[0]?.story_types || []
+          }));
+
+        // Calculate route corridor
+        const directDistance = this.calculateDistance(startLocation, endLocation);
+        const corridorWidth = Math.max(0.5, directDistance * 0.3); // 30% of direct distance, minimum 500m
+
+        // Score and select optimal waypoints
+        const scoredPoints = eligiblePoints
+          .map(point => {
+            const distanceFromLine = this.getDistanceFromLine(point, startLocation, endLocation);
+            const distanceToStart = this.calculateDistance(point, startLocation);
+            const distanceToEnd = this.calculateDistance(point, endLocation);
+            const progression = this.calculateProgressionAlongRoute(point, startLocation, endLocation);
+            
+            // Score based on multiple factors
+            const score = this.calculatePointScore(
+              distanceToStart,
+              distanceToEnd,
+              distanceFromLine,
+              directDistance,
+              point,
+              progression
+            );
+
+            return { ...point, score, progression };
+          })
+          .filter(point => {
+            // Keep points within corridor and reasonable distance
+            const withinCorridor = this.isPointInEnhancedCorridor(point, startLocation, endLocation, corridorWidth);
+            const withinDistance = this.calculateDistance(point, startLocation) <= 50 &&
+                                 this.calculateDistance(point, endLocation) <= 50;
+            return withinCorridor && withinDistance;
+          })
+          .sort((a, b) => b.score - a.score);
+
+        // Select points with good spacing
+        const MIN_SPACING = 0.2; // 200m minimum spacing
+        routePoints = [];
+        let lastProgression = -0.2;
+
+        for (const point of scoredPoints) {
+          if (point.progression - lastProgression >= MIN_SPACING && routePoints.length < 10) {
+            routePoints.push(point);
+            lastProgression = point.progression;
+          }
         }
-        return acc;
-      }, {});
 
-      console.log('Story types map:', storyTypesMap);
-
-      // Get all locations with their AI stories
-      const { data: historicalPoints, error: locationsError } = await supabase
-        .from('locations')
-        .select(`
-          *,
-          ai_generated_stories (
-            content,
-            story_types
-          )
-        `);
-
-      if (locationsError) throw locationsError;
-
-      // Transform locations with proper story types
-      const transformedPoints = historicalPoints.map(location => {
-        const aiStory = location.ai_generated_stories?.[0];
-        // Try to get story types from our map first, then fall back to the AI story
-        const storyTypes = storyTypesMap[location.id] || aiStory?.story_types || [];
-
-        return {
-          id: location.id,
-          title: location.title,
-          description: location.description,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          story: aiStory?.content,
-          story_types: storyTypes,
-          ai_generated_stories: location.ai_generated_stories
-        };
-      });
-
-      // Filter points by story types
-      const filteredPoints = selectedTypes.includes('all') ? transformedPoints : transformedPoints.filter(location => {
-        if (!Array.isArray(location.story_types)) return false;
-
-        // Convert camelCase to snake_case for comparison
-        const normalizeType = (type) => {
-          return type.toLowerCase().replace(/([a-z])([A-Z])/g, '$1_$2');
-        };
-
-        const normalizedPointTypes = location.story_types.map(normalizeType);
-        const normalizedSelectedTypes = selectedTypes.map(normalizeType);
-
-        console.log('Comparing types for location:', {
-          id: location.id,
-          title: location.title,
-          originalTypes: location.story_types,
-          normalizedPointTypes,
-          normalizedSelectedTypes
+        console.log('Selected waypoints:', {
+          eligible: eligiblePoints.length,
+          scored: scoredPoints.length,
+          final: routePoints.length
         });
-
-        const matches = normalizedSelectedTypes.some(selectedType => 
-          normalizedPointTypes.includes(selectedType)
-        );
-
-        console.log('Location match result:', {
-          id: location.id,
-          title: location.title,
-          matches
-        });
-
-        return matches;
-      });
-
-      console.log('Filtered points for route:', {
-        total: filteredPoints.length,
-        selectedTypes,
-        points: filteredPoints.map(p => ({
-          id: p.id,
-          title: p.title,
-          story_types: p.story_types
-        }))
-      });
-
-      // Enhanced point selection along route
-      const routePoints = this.selectOptimalWaypoints(
-        startLocation,
-        endLocation,
-        filteredPoints
-      );
-
-      console.log('Selected waypoints:', {
-        total: routePoints.length,
-        points: routePoints.map(p => ({
-          id: p.id,
-          title: p.title,
-          story_types: p.story_types
-        }))
-      });
-
-      // Get route directions from Google Maps API
-      const waypointsParam = routePoints.length > 0 ? 
-        `&waypoints=optimize:true|${routePoints.map(point => `${point.latitude},${point.longitude}`).join('|')}` : '';
-
-      const directionsResponse = await fetch(
-        `https://maps.googleapis.com/maps/api/directions/json?origin=${
-          startLocation.latitude
-        },${startLocation.longitude}&destination=${
-          endLocation.latitude
-        },${endLocation.longitude}${waypointsParam}&mode=walking&units=metric&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
-      );
-
-      const directionsData = await directionsResponse.json();
-
-      if (directionsData.status !== 'OK') {
-        console.error('Directions API error:', directionsData);
-        throw new Error('Failed to get route directions');
       }
+      
+      console.log('Route points after processing:', routePoints.map(p => ({
+        latitude: p.latitude,
+        longitude: p.longitude
+      })));
 
-      // Extract route coordinates and instructions from directions response
-      let routeCoordinates = [];
-      const instructions = [];
-      const waypointOrder = directionsData.routes[0].waypoint_order;
-
-      // Process each leg of the journey
-      directionsData.routes[0].legs.forEach(leg => {
-        // Add start location of leg
-        routeCoordinates.push({
-          latitude: leg.start_location.lat,
-          longitude: leg.start_location.lng
-        });
-
-        // Process each step in the leg
-        leg.steps.forEach(step => {
-          // Add start location of step
-          routeCoordinates.push({
-            latitude: step.start_location.lat,
-            longitude: step.start_location.lng
-          });
-
-          // Add end location of step
-          routeCoordinates.push({
-            latitude: step.end_location.lat,
-            longitude: step.end_location.lng
-          });
-
-          instructions.push({
-            text: step.html_instructions.replace(/<[^>]*>/g, ''),
-            distance: typeof step.distance === 'object' ? step.distance.text : (step.distance || '0.1 km'),
-            distance_meters: step.distance?.value || 0,
-            duration: typeof step.duration === 'object' ? step.duration.text : (step.duration || '1 min'),
-            duration_seconds: step.duration?.value || 0,
-            maneuver: step.maneuver,
-          });
-        });
-
-        // Add end location of leg
-        routeCoordinates.push({
-          latitude: leg.end_location.lat,
-          longitude: leg.end_location.lng
-        });
-      });
-
-      // Remove duplicate consecutive points
-      routeCoordinates = routeCoordinates.filter((point, index, array) => {
-        if (index === 0) return true;
-        const prevPoint = array[index - 1];
-        return !(
-          Math.abs(point.latitude - prevPoint.latitude) < 0.000001 &&
-          Math.abs(point.longitude - prevPoint.longitude) < 0.000001
-        );
-      });
-
-      // Transform points to include story content and generate audio
-      const orderedRoutePoints = waypointOrder.map(index => routePoints[index]);
-
-      // Generate route with waypoints, path, and instructions
-      const totalDuration = directionsData.routes[0].legs.reduce((acc, leg) => {
-        console.log('Leg duration:', leg.duration);
-        return acc + (leg.duration?.value || 0);
-      }, 0);
-
-      console.log('Total duration in seconds:', totalDuration);
-
-      const route = {
-        start: startLocation,
-        end: endLocation,
-        waypoints: transformedPoints,
-        coordinates: routeCoordinates,
-        instructions,
-        storyTypes: selectedTypes,
-        totalDistance: directionsData.routes[0].legs.reduce((acc, leg) => acc + leg.distance.value, 0),
-        totalDistanceText: directionsData.routes[0].legs.reduce((acc, leg) => acc + parseFloat(leg.distance.text.replace(' km', '')), 0).toFixed(1) + ' km',
-        totalDuration: totalDuration
+      // Validate start and end locations
+      const start = {
+        latitude: typeof startLocation.latitude === 'string' ? parseFloat(startLocation.latitude) : startLocation.latitude,
+        longitude: typeof startLocation.longitude === 'string' ? parseFloat(startLocation.longitude) : startLocation.longitude
       };
 
-      // Log route data for debugging
-      console.log('Generated route:', {
-        coordinatesCount: routeCoordinates.length,
-        firstCoord: routeCoordinates[0],
-        lastCoord: routeCoordinates[routeCoordinates.length - 1],
-        waypointsCount: transformedPoints.length,
-        allCoords: routeCoordinates
+      const end = {
+        latitude: typeof endLocation.latitude === 'string' ? parseFloat(endLocation.latitude) : endLocation.latitude,
+        longitude: typeof endLocation.longitude === 'string' ? parseFloat(endLocation.longitude) : endLocation.longitude
+      };
+
+      if (isNaN(start.latitude) || isNaN(start.longitude) || 
+          isNaN(end.latitude) || isNaN(end.longitude)) {
+        throw new Error('Invalid start or end location coordinates');
+      }
+
+      console.log('Validated coordinates:', {
+        start,
+        end,
+        waypointsCount: routePoints.length
       });
 
-      this.currentRoute = route;
-      return route;
+      // Remove duplicate waypoints and limit to 10 waypoints (Google Maps limit)
+      const uniqueRoutePoints = routePoints.reduce((acc, point) => {
+        const key = `${point.latitude.toFixed(6)},${point.longitude.toFixed(6)}`;
+        if (!acc.has(key)) {
+          acc.set(key, point);
+        }
+        return acc;
+      }, new Map());
+
+      const limitedRoutePoints = Array.from(uniqueRoutePoints.values()).slice(0, 10);
+
+      console.log('Filtered waypoints:', {
+        original: routePoints.length,
+        afterDuplicates: uniqueRoutePoints.size,
+        final: limitedRoutePoints.length,
+        points: limitedRoutePoints
+      });
+
+      // Filter out waypoints that are too far from the route (more than 50km from start/end)
+      const MAX_DISTANCE_KM = 50;
+      const filteredRoutePoints = limitedRoutePoints.filter(point => {
+        const distanceToStart = this.calculateDistance(point, start);
+        const distanceToEnd = this.calculateDistance(point, end);
+        const isWithinRange = distanceToStart <= MAX_DISTANCE_KM && distanceToEnd <= MAX_DISTANCE_KM;
+        
+        if (!isWithinRange) {
+          console.log('Filtering out waypoint too far from route:', point);
+        }
+        return isWithinRange;
+      });
+
+      console.log('Distance-filtered waypoints:', {
+        original: limitedRoutePoints.length,
+        filtered: filteredRoutePoints.length
+      });
+
+      // Build waypoints parameter with better validation and route feasibility checks
+      let validWaypoints = filteredRoutePoints
+        .filter(point => {
+          // Additional validation for each point
+          const lat = parseFloat(point.latitude);
+          const lng = parseFloat(point.longitude);
+          const isValid = !isNaN(lat) && !isNaN(lng) && 
+                        lat >= -90 && lat <= 90 && 
+                        lng >= -180 && lng <= 180;
+          if (!isValid) {
+            console.warn('Invalid waypoint coordinates:', point);
+          }
+          return isValid;
+        });
+
+      // Calculate progression along route for each waypoint
+      validWaypoints = validWaypoints.map(point => ({
+        ...point,
+        progression: this.calculateProgressionAlongRoute(point, start, end)
+      }));
+
+      // Sort waypoints by progression
+      validWaypoints.sort((a, b) => a.progression - b.progression);
+
+      // Ensure minimum spacing between waypoints (at least 500 meters)
+      const MIN_SPACING_KM = 0.5;
+      const spacedWaypoints = [];
+      let lastPoint = null;
+
+      for (const point of validWaypoints) {
+        if (!lastPoint || this.calculateDistance(lastPoint, point) >= MIN_SPACING_KM) {
+          spacedWaypoints.push(point);
+          lastPoint = point;
+        } else {
+          console.log('Skipping waypoint too close to previous:', point.title);
+        }
+      }
+
+      // Limit to 6 waypoints to ensure route feasibility
+      validWaypoints = spacedWaypoints.slice(0, 6);
+
+      console.log('Waypoint selection:', {
+        afterSpacing: spacedWaypoints.length,
+        final: validWaypoints.length,
+        waypoints: validWaypoints.map(w => ({
+          title: w.title,
+          progression: w.progression,
+          distance: this.getDistanceFromLine(w, start, end)
+        }))
+      });
+
+      const waypointsParam = validWaypoints.length > 0 
+        ? validWaypoints
+            .map(point => {
+              // Format with exactly 6 decimal places
+              const lat = parseFloat(point.latitude).toFixed(6);
+              const lng = parseFloat(point.longitude).toFixed(6);
+              return `${lat},${lng}`;
+            })
+            .join('|')
+        : '';
+
+      // Build the full URL with proper URL encoding
+      const apiUrl = new URL('https://maps.googleapis.com/maps/api/directions/json');
+      
+      // Format start and end with consistent precision
+      const originParam = `${parseFloat(start.latitude).toFixed(6)},${parseFloat(start.longitude).toFixed(6)}`;
+      const destParam = `${parseFloat(end.latitude).toFixed(6)},${parseFloat(end.longitude).toFixed(6)}`;
+      
+      apiUrl.searchParams.append('origin', originParam);
+      apiUrl.searchParams.append('destination', destParam);
+      
+      if (waypointsParam) {
+        // Let Google optimize the waypoint order to find a valid route
+        apiUrl.searchParams.append('waypoints', `optimize:true|${waypointsParam.split('|').map(wp => `via:${wp}`).join('|')}`);
+      }
+      
+      apiUrl.searchParams.append('mode', 'walking');
+      apiUrl.searchParams.append('units', 'metric');
+      apiUrl.searchParams.append('key', env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+
+      const debugUrl = apiUrl.toString().replace(env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY, 'API_KEY');
+      console.log('API URL (without key):', debugUrl);
+      console.log('Waypoints being used:', validWaypoints);
+
+      try {
+        const directionsResponse = await fetch(apiUrl.toString());
+        const responseText = await directionsResponse.text();
+
+        if (!directionsResponse.ok) {
+          console.error('Directions API HTTP error:', directionsResponse.status, responseText);
+          throw new Error(`Directions API HTTP error: ${directionsResponse.status}`);
+        }
+
+        let directionsData;
+        try {
+          directionsData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Failed to parse directions response:', responseText.substring(0, 500));
+          throw new Error(`Invalid response from directions API: ${responseText.substring(0, 100)}`);
+        }
+
+        if (directionsData.status !== 'OK') {
+          console.error('Directions API error:', directionsData);
+          throw new Error(`Failed to get route directions: ${directionsData.status} - ${directionsData.error_message || 'Unknown error'}`);
+        }
+
+        // Extract route coordinates and instructions from directions response
+        let routeCoordinates = [];
+        const instructions = [];
+        const waypointOrder = directionsData.routes[0].waypoint_order;
+
+        // Process each leg of the journey
+        directionsData.routes[0].legs.forEach(leg => {
+          // Add start location of leg
+          routeCoordinates.push({
+            latitude: leg.start_location.lat,
+            longitude: leg.start_location.lng
+          });
+
+          // Process each step in the leg
+          leg.steps.forEach(step => {
+            // Add start location of step
+            routeCoordinates.push({
+              latitude: step.start_location.lat,
+              longitude: step.start_location.lng
+            });
+
+            // Add end location of step
+            routeCoordinates.push({
+              latitude: step.end_location.lat,
+              longitude: step.end_location.lng
+            });
+
+            instructions.push({
+              text: step.html_instructions.replace(/<[^>]*>/g, ''),
+              distance: typeof step.distance === 'object' ? step.distance.text : (step.distance || '0.1 km'),
+              distance_meters: step.distance?.value || 0,
+              duration: typeof step.duration === 'object' ? step.duration.text : (step.duration || '1 min'),
+              duration_seconds: step.duration?.value || 0,
+              maneuver: step.maneuver,
+            });
+          });
+
+          // Add end location of leg
+          routeCoordinates.push({
+            latitude: leg.end_location.lat,
+            longitude: leg.end_location.lng
+          });
+        });
+
+        // Remove duplicate consecutive points
+        routeCoordinates = routeCoordinates.filter((point, index, array) => {
+          if (index === 0) return true;
+          const prevPoint = array[index - 1];
+          return !(
+            Math.abs(point.latitude - prevPoint.latitude) < 0.000001 &&
+            Math.abs(point.longitude - prevPoint.longitude) < 0.000001
+          );
+        });
+
+        // Keep the original waypoints, just reorder them according to the API response
+        const orderedWaypoints = waypointOrder.map(index => filteredRoutePoints[index]);
+
+        // Generate route with waypoints, path, and instructions
+        const totalDuration = directionsData.routes[0].legs.reduce((acc, leg) => {
+          console.log('Leg duration:', leg.duration);
+          return acc + (leg.duration?.value || 0);
+        }, 0);
+
+        console.log('Total duration in seconds:', totalDuration);
+
+        const route = {
+          start: startLocation,
+          end: endLocation,
+          waypoints: orderedWaypoints, // Use our ordered waypoints, not any from the API
+          coordinates: routeCoordinates,
+          instructions,
+          totalDuration,
+          totalDistance: directionsData.routes[0].legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0),
+          legs: directionsData.routes[0].legs
+        };
+
+        // Log route data for debugging
+        console.log('Generated route:', {
+          coordinatesCount: routeCoordinates.length,
+          firstCoord: routeCoordinates[0],
+          lastCoord: routeCoordinates[routeCoordinates.length - 1],
+          waypointsCount: orderedWaypoints.length,
+          waypoints: orderedWaypoints
+        });
+
+        this.currentRoute = route;
+        return route;
+      } catch (error) {
+        console.error('Error generating tour route:', error);
+        throw error;
+      }
     } catch (error) {
       console.error('Error generating tour route:', error);
       throw error;
     }
   }
 
-  selectOptimalWaypoints(start, end, points) {
-    // Calculate direct distance between start and end
-    const directDistance = this.calculateDistance(start, end);
-    
-    // Increased buffer distance for wider coverage
-    const bufferDistance = Math.max(0.5, directDistance * 0.3); // Min 500m, or 30% of direct distance
-    
-    // Get points within the enhanced corridor
-    const corridorPoints = points.filter(point => 
-      this.isPointInEnhancedCorridor(
-        { latitude: point.latitude, longitude: point.longitude },
-        start,
-        end,
-        bufferDistance
-      )
-    );
-
-    // Create segments along the route for better distribution
-    const numSegments = Math.max(4, Math.ceil(directDistance / 0.4)); // One segment every 400m
-    const segments = new Array(numSegments).fill().map((_, i) => {
-      const progress = i / (numSegments - 1);
-      return {
-        latitude: start.latitude + (end.latitude - start.latitude) * progress,
-        longitude: start.longitude + (end.longitude - start.longitude) * progress,
-        points: []
-      };
-    });
-
-    // Assign points to nearest segment
-    corridorPoints.forEach(point => {
-      let minDist = Infinity;
-      let bestSegment = 0;
-      
-      segments.forEach((segment, i) => {
-        const dist = this.calculateDistance(
-          { latitude: point.latitude, longitude: point.longitude },
-          segment
-        );
-        if (dist < minDist) {
-          minDist = dist;
-          bestSegment = i;
-        }
-      });
-      
-      segments[bestSegment].points.push(point);
-    });
-
-    // Select best points from each segment
-    const selectedPoints = [];
-    segments.forEach(segment => {
-      if (segment.points.length > 0) {
-        // Score points in this segment
-        const scoredPoints = segment.points.map(point => ({
-          ...point,
-          score: this.calculatePointScore(
-            this.calculateDistance(start, point),
-            this.calculateDistance(end, point),
-            this.getDistanceFromLine(
-              { latitude: point.latitude, longitude: point.longitude },
-              start,
-              end
-            ),
-            directDistance,
-            point
-          )
-        }));
-
-        // Sort by score and take the best point(s)
-        scoredPoints.sort((a, b) => b.score - a.score);
-        selectedPoints.push(scoredPoints[0]);
-        
-        // If segment has multiple good points with similar scores, include them
-        for (let i = 1; i < scoredPoints.length && i < 2; i++) {
-          if (scoredPoints[i].score > scoredPoints[0].score * 0.8) {
-            selectedPoints.push(scoredPoints[i]);
-          }
-        }
-      }
-    });
-
-    // Ensure we have enough points but not too many
-    const maxPoints = Math.min(12, Math.max(6, Math.ceil(directDistance / 0.4)));
-    return selectedPoints.slice(0, maxPoints);
-  }
-
-  calculatePointScore(distanceFromStart, distanceFromEnd, distanceFromLine, directDistance, point) {
+  calculatePointScore(distanceFromStart, distanceFromEnd, distanceFromLine, directDistance, point, progression) {
     // Base score starts at 1
     let score = 1;
 
@@ -438,6 +501,9 @@ class TourGuideService {
     if (point.ai_generated_stories?.length > 0) {
       score *= 1.2;
     }
+
+    // Bonus for points with good progression
+    score *= 1 + (progression - 0.5) * 0.2;
 
     return score;
   }
@@ -459,19 +525,22 @@ class TourGuideService {
   }
 
   calculateProgressionAlongRoute(point, start, end) {
-    const { latitude: x, longitude: y } = point;
-    const { latitude: x1, longitude: y1 } = start;
-    const { latitude: x2, longitude: y2 } = end;
-    
-    const A = x - x1;
-    const B = y - y1;
-    const C = x2 - x1;
-    const D = y2 - y1;
+    // Project point onto line between start and end
+    const startToEnd = {
+      lat: end.latitude - start.latitude,
+      lng: end.longitude - start.longitude
+    };
+    const startToPoint = {
+      lat: point.latitude - start.latitude,
+      lng: point.longitude - start.longitude
+    };
 
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
+    // Calculate dot product
+    const dotProduct = startToPoint.lat * startToEnd.lat + startToPoint.lng * startToEnd.lng;
+    const lineLength = startToEnd.lat * startToEnd.lat + startToEnd.lng * startToEnd.lng;
 
-    return lenSq !== 0 ? dot / lenSq : -1;
+    // Get progression along line (0 = at start, 1 = at end)
+    return Math.max(0, Math.min(1, dotProduct / lineLength));
   }
 
   // Decode Google Maps polyline encoding
@@ -690,6 +759,19 @@ class TourGuideService {
     } catch (error) {
       console.error('Error playing audio from URL:', error);
     }
+  }
+
+  normalizeType(types, selectedTypes) {
+    const normalizeType = (type) => {
+      return type.toLowerCase().replace(/([a-z])([A-Z])/g, '$1_$2');
+    };
+
+    const normalizedPointTypes = types.map(normalizeType);
+    const normalizedSelectedTypes = selectedTypes.map(normalizeType);
+
+    return normalizedSelectedTypes.some(selectedType => 
+      normalizedPointTypes.includes(selectedType)
+    );
   }
 }
 
