@@ -13,14 +13,18 @@ import {
   Image,
   Vibration,
   useColorScheme,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getAIResponse, generateVoice } from '../services/ai';
 import * as Location from 'expo-location';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -58,13 +62,12 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
   };
 
   return (
-    <Animated.View 
-      style={[
-        styles.messageBubble,
-        message.isUser ? styles.userBubble : styles.aiBubble,
-        { opacity: fadeAnim }
-      ]}
-    >
+    <Animated.View style={[
+      styles.messageBubble,
+      message.isUser ? styles.userBubble : styles.aiBubble,
+      colorScheme === 'dark' && (message.isUser ? styles.userBubbleDark : styles.aiBubbleDark),
+      { opacity: fadeAnim }
+    ]}>
       {!message.isUser && (
         <View style={styles.aiHeader}>
           <Image
@@ -81,7 +84,10 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
       )}
       
       <TouchableOpacity
-        onPress={() => setIsExpanded(!isExpanded)}
+        onPress={() => {
+          setIsExpanded(!isExpanded);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }}
         activeOpacity={0.8}
       >
         <Text style={[
@@ -91,7 +97,9 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
           !isExpanded && message.text.length > 150 && styles.truncatedText
         ]}>
           {isExpanded ? message.text : message.text.slice(0, 150)}
-          {!isExpanded && message.text.length > 150 && '... (tap to read more)'}
+          {!isExpanded && message.text.length > 150 && (
+            <Text style={styles.readMoreText}>... tap to read more</Text>
+          )}
         </Text>
       </TouchableOpacity>
 
@@ -101,11 +109,13 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
             style={[styles.actionButton, styles.audioButton]}
             onPress={handleAudioPress}
           >
-            <MaterialIcons
-              name={isPlaying ? "stop" : "volume-up"}
-              size={20}
-              color="#94a3b8"
-            />
+            <View style={styles.audioButtonBackground}>
+              <MaterialIcons
+                name={isPlaying ? "stop" : "volume-up"}
+                size={20}
+                color={colorScheme === 'dark' ? '#e2e8f0' : '#64748b'}
+              />
+            </View>
           </TouchableOpacity>
 
           {message.suggestedActions?.map((action, index) => (
@@ -114,25 +124,40 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
               style={[styles.actionButton, styles.suggestedAction]}
               onPress={() => handleActionPress(action)}
             >
-              <MaterialIcons
-                name={getActionIcon(action.type)}
-                size={20}
-                color="#3b82f6"
-              />
-              <Text style={styles.actionText}>{action.title}</Text>
-              <View style={styles.pointsBadge}>
-                <Text style={styles.pointsText}>+{action.points}</Text>
-              </View>
+              <LinearGradient
+                colors={['rgba(59, 130, 246, 0.1)', 'rgba(59, 130, 246, 0.2)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.actionGradient}
+              >
+                <MaterialIcons
+                  name={getActionIcon(action.type)}
+                  size={20}
+                  color="#3b82f6"
+                />
+                <Text style={styles.actionText}>{action.title}</Text>
+                <View style={styles.pointsBadge}>
+                  <Text style={styles.pointsText}>+{action.points}</Text>
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           ))}
 
           {message.relatedLocations?.length > 0 && (
             <View style={styles.relatedLocations}>
-              <Text style={styles.relatedTitle}>Nearby Places:</Text>
+              <Text style={[
+                styles.relatedTitle,
+                colorScheme === 'dark' && styles.relatedTitleDark
+              ]}>
+                Nearby Places:
+              </Text>
               {message.relatedLocations.map((location, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={styles.locationButton}
+                  style={[
+                    styles.locationButton,
+                    colorScheme === 'dark' && styles.locationButtonDark
+                  ]}
                   onPress={() => handleActionPress({
                     type: 'visit',
                     location,
@@ -197,7 +222,6 @@ const AIGuideScreen = ({ navigation }) => {
 
   const loadUserProfile = async () => {
     // TODO: Load from AsyncStorage
-    // For now using mock data
     setUserProfile({
       interests: ['history', 'architecture', 'culture'],
       visitedLocations: [],
@@ -264,10 +288,8 @@ const AIGuideScreen = ({ navigation }) => {
 
       setMessages(prev => [...prev, aiMessage]);
       
-      // Haptic feedback for response
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Auto-play response for accessibility
       if (userProfile.accessibility.visualAid) {
         Speech.speak(aiMessage.text, {
           language: userProfile.preferredLanguage,
@@ -349,7 +371,10 @@ const AIGuideScreen = ({ navigation }) => {
           {suggestions.map((suggestion, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.suggestionButton}
+              style={[
+                styles.suggestionButton,
+                colorScheme === 'dark' && styles.suggestionButtonDark
+              ]}
               onPress={() => {
                 setInputText(suggestion.text);
                 inputRef.current?.focus();
@@ -371,61 +396,74 @@ const AIGuideScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={[
-      styles.container,
-      colorScheme === 'dark' && styles.containerDark
-    ]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoid}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messageList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-          onLayout={() => flatListRef.current?.scrollToEnd()}
-          ListHeaderComponent={messages.length === 1 ? renderSuggestions : null}
-        />
-
-        <View style={[
-          styles.inputContainer,
-          colorScheme === 'dark' && styles.inputContainerDark
-        ]}>
-          <TextInput
-            ref={inputRef}
-            style={[
-              styles.input,
-              colorScheme === 'dark' && styles.inputDark
-            ]}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask about history around you..."
-            placeholderTextColor="#64748b"
-            multiline
-            maxLength={500}
-            onSubmitEditing={handleSend}
-            editable={!loading}
+    <LinearGradient
+      colors={colorScheme === 'dark' 
+        ? ['#0f172a', '#1e293b']
+        : ['#ffffff', '#f8fafc']
+      }
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoid}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messageList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+            onLayout={() => flatListRef.current?.scrollToEnd()}
+            ListHeaderComponent={messages.length === 1 ? renderSuggestions : null}
+            showsVerticalScrollIndicator={false}
           />
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              loading && styles.sendButtonDisabled
-            ]}
-            onPress={handleSend}
-            disabled={loading || !inputText.trim()}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <MaterialIcons name="send" size={24} color="#ffffff" />
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+          <View style={[
+            styles.inputContainer,
+            colorScheme === 'dark' && styles.inputContainerDark
+          ]}>
+            <TextInput
+              ref={inputRef}
+              style={[
+                styles.input,
+                colorScheme === 'dark' && styles.inputDark
+              ]}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask about history around you..."
+              placeholderTextColor="#64748b"
+              multiline
+              maxLength={500}
+              onSubmitEditing={handleSend}
+              editable={!loading}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                loading && styles.sendButtonDisabled
+              ]}
+              onPress={handleSend}
+              disabled={loading || !inputText.trim()}
+            >
+              <LinearGradient
+                colors={loading ? ['#94a3b8', '#64748b'] : ['#3b82f6', '#2563eb']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sendButtonGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <MaterialIcons name="send" size={24} color="#ffffff" />
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
@@ -442,10 +480,6 @@ const getActionIcon = (type) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  containerDark: {
-    backgroundColor: '#0f172a',
   },
   keyboardAvoid: {
     flex: 1,
@@ -456,29 +490,38 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: '85%',
-    padding: 12,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 20,
     marginBottom: 12,
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   userBubble: {
-    backgroundColor: '#3b82f6',
     alignSelf: 'flex-end',
     borderBottomRightRadius: 4,
+    backgroundColor: '#3b82f6',
+  },
+  userBubbleDark: {
+    backgroundColor: '#2563eb',
   },
   aiBubble: {
-    backgroundColor: '#f1f5f9',
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
+    backgroundColor: 'rgba(241, 245, 249, 0.95)',
+  },
+  aiBubbleDark: {
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
   },
   aiHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    borderRadius: 16,
+    padding: 8,
+    backgroundColor: 'rgba(241, 245, 249, 0.5)',
   },
   aiAvatar: {
     width: 24,
@@ -487,16 +530,16 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   aiName: {
-    color: '#64748b',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#64748b',
   },
   aiNameDark: {
     color: '#94a3b8',
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   userText: {
     color: '#ffffff',
@@ -513,37 +556,48 @@ const styles = StyleSheet.create({
   truncatedText: {
     marginBottom: 4,
   },
+  readMoreText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
   messageActions: {
-    marginTop: 8,
+    marginTop: 12,
     gap: 8,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   audioButton: {
     alignSelf: 'flex-start',
-    padding: 8,
-    borderRadius: 20,
+  },
+  audioButtonBackground: {
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
   },
   suggestedAction: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
   },
   actionText: {
     color: '#3b82f6',
     fontSize: 14,
+    fontWeight: '600',
     marginLeft: 8,
     flex: 1,
   },
   pointsBadge: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 12,
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
   },
   pointsText: {
     color: '#3b82f6',
@@ -551,24 +605,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   relatedLocations: {
-    marginTop: 8,
+    marginTop: 12,
   },
   relatedTitle: {
     color: '#64748b',
     fontSize: 14,
+    fontWeight: '600',
     marginBottom: 8,
+  },
+  relatedTitleDark: {
+    color: '#94a3b8',
   },
   locationButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 4,
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 6,
+  },
+  locationButtonDark: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
   },
   locationText: {
     color: '#3b82f6',
     fontSize: 14,
+    fontWeight: '500',
     flex: 1,
     marginLeft: 8,
   },
@@ -580,40 +642,43 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     padding: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderTopColor: 'rgba(226, 232, 240, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   inputContainerDark: {
-    borderTopColor: '#1e293b',
-    backgroundColor: '#0f172a',
+    borderTopColor: 'rgba(30, 41, 59, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     marginRight: 8,
     color: '#0f172a',
     fontSize: 16,
     maxHeight: 100,
   },
   inputDark: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
     color: '#ffffff',
   },
   sendButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 20,
     width: 44,
     height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 22,
+    overflow: 'hidden',
   },
   sendButtonDisabled: {
-    backgroundColor: '#94a3b8',
+    opacity: 0.7,
+  },
+  sendButtonGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   suggestionsContainer: {
     marginBottom: 24,
@@ -621,6 +686,7 @@ const styles = StyleSheet.create({
   suggestionsTitle: {
     color: '#64748b',
     fontSize: 14,
+    fontWeight: '600',
     marginBottom: 12,
   },
   suggestionsTextDark: {
@@ -633,18 +699,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.2)',
   },
+  suggestionButtonDark: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
   suggestionIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   suggestionText: {
     color: '#3b82f6',
     fontSize: 14,
+    fontWeight: '500',
   },
 });
 

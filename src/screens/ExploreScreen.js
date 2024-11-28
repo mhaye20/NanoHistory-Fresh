@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,255 +8,264 @@ import {
   Animated,
   Image,
   Platform,
-  Linking,
-  Alert,
   ActivityIndicator,
   Dimensions,
-  useColorScheme,
+  TextInput,
+  Alert,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getNearbyLocations } from '../services/supabase';
-import { generateHistoricalStory } from '../services/ai';
+import { getUserPointsAndLevel, getUserAchievements, POINT_VALUES } from '../services/points';
+import { supabase } from '../services/supabase';
+import env from '../config/env';
+import { debounce } from 'lodash';
 
-const CHALLENGES = [
-  {
-    id: 'daily',
-    title: 'Daily Explorer',
-    description: 'Visit 3 new historical sites today',
-    points: 100,
-    icon: 'explore',
-    progress: 0,
-    target: 3,
-  },
-  {
-    id: 'photographer',
-    title: 'History Photographer',
-    description: 'Share 5 photos of historical landmarks',
-    points: 150,
-    icon: 'camera-alt',
-    progress: 2,
-    target: 5,
-  },
-  {
-    id: 'storyteller',
-    title: 'Local Storyteller',
-    description: 'Submit 2 historical stories',
-    points: 200,
-    icon: 'history-edu',
-    progress: 0,
-    target: 2,
-  },
-];
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_HEIGHT = Platform.OS === 'ios' ? 70 : 50;
+const CARD_WIDTH = SCREEN_WIDTH * 0.85;
+const CARD_HEIGHT = 400;
+const SPACING = 12;
 
-const LocationCard = ({ location, onPress, onARPress, colorScheme }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const [isExpanded, setIsExpanded] = useState(false);
+const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
+  const inputRange = [
+    (index - 1) * (CARD_WIDTH + SPACING * 2),
+    index * (CARD_WIDTH + SPACING * 2),
+    (index + 1) * (CARD_WIDTH + SPACING * 2),
+  ];
 
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.95,
-      useNativeDriver: true,
-    }).start();
-  };
+  const scale = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.9, 1, 0.9],
+  });
 
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-  };
+  const opacity = scrollX.interpolate({
+    inputRange,
+    outputRange: [0.6, 1, 0.6],
+  });
 
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
-
-  const handleARPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onARPress(location);
+  // Format story types for display
+  const getDisplayStoryTypes = () => {
+    if (!Array.isArray(location.story_types) || location.story_types.length === 0) {
+      return 'General History';
+    }
+    // Take first 2 story types and format them
+    const types = location.story_types.slice(0, 2).map(type => 
+      type.charAt(0).toUpperCase() + type.slice(1).replace(/([A-Z])/g, ' $1')
+    );
+    return types.join(' • ') + (location.story_types.length > 2 ? ' • ...' : '');
   };
 
   return (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.locationCard,
-        colorScheme === 'dark' && styles.locationCardDark,
-        { transform: [{ scale: scaleAnim }] }
+        styles.card,
+        {
+          transform: [{ scale }],
+          opacity,
+        },
       ]}
     >
       <TouchableOpacity
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.7}
+        activeOpacity={0.95}
+        onPress={onPress}
+        style={styles.cardTouchable}
       >
-        {location.imageUrl && (
-          <Image
-            source={{ uri: location.imageUrl }}
-            style={styles.locationImage}
-            resizeMode="cover"
-          />
-        )}
-        <View style={styles.locationContent}>
-          <View style={styles.locationHeader}>
-            <Text style={[
-              styles.locationTitle,
-              colorScheme === 'dark' && styles.locationTitleDark
-            ]}>
-              {location.title}
-            </Text>
-            {location.rating && (
-              <View style={styles.ratingContainer}>
-                <MaterialIcons name="star" size={16} color="#fbbf24" />
-                <Text style={styles.ratingText}>{location.rating.toFixed(1)}</Text>
-              </View>
-            )}
-          </View>
+        <Image
+          source={{ uri: location.imageUrl }}
+          style={styles.locationImage}
+          resizeMode="cover"
+        />
+        
+        <BlurView intensity={50} tint="dark" style={styles.topLabelOverlay}>
+          <Text style={styles.topLabelText}>{getDisplayStoryTypes()}</Text>
+        </BlurView>
 
-          <TouchableOpacity onPress={() => setIsExpanded(!isExpanded)}>
-            <Text 
-              style={[
-                styles.locationDescription,
-                colorScheme === 'dark' && styles.locationDescriptionDark,
-                !isExpanded && styles.truncatedText
-              ]}
-              numberOfLines={isExpanded ? undefined : 2}
-            >
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
+          style={styles.gradient}
+        >
+          <View style={styles.cardContent}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.locationTitle}>{location.title}</Text>
+            </View>
+
+            <Text style={styles.locationDescription} numberOfLines={3}>
               {location.description}
             </Text>
-          </TouchableOpacity>
 
-          {location.aiGeneratedStory && location.aiGeneratedStory.facts && (
-            <View style={styles.aiInsights}>
-              <Text style={[
-                styles.aiInsightsTitle,
-                colorScheme === 'dark' && styles.aiInsightsTitleDark
-              ]}>
-                AI Insights
-              </Text>
-              <View style={styles.factsList}>
-                {location.aiGeneratedStory.facts.slice(0, 2).map((fact, index) => (
-                  <View key={index} style={styles.factItem}>
-                    <MaterialIcons name="lightbulb" size={16} color="#3b82f6" />
-                    <Text style={[
-                      styles.factText,
-                      colorScheme === 'dark' && styles.factTextDark
-                    ]}>
-                      {fact}
-                    </Text>
-                  </View>
-                ))}
+            <View style={styles.cardFooter}>
+              <View style={styles.locationInfo}>
+                <BlurView intensity={30} tint="dark" style={styles.distanceBadge}>
+                  <MaterialIcons name="place" size={16} color="#fff" />
+                  <Text style={styles.distanceText}>
+                    {location.distance ? `${(location.distance / 1000).toFixed(1)} km` : '2.5 km'}
+                  </Text>
+                </BlurView>
+
+                {location.hasStories && (
+                  <BlurView intensity={30} tint="dark" style={styles.storiesBadge}>
+                    <MaterialIcons name="history-edu" size={16} color="#10b981" />
+                    <Text style={styles.storiesText}>Stories Available</Text>
+                  </BlurView>
+                )}
+              </View>
+
+              <View style={styles.actions}>
+                {location.hasAR && (
+                  <TouchableOpacity
+                    style={styles.arButton}
+                    onPress={onARPress}
+                  >
+                    <LinearGradient
+                      colors={['#10b981', '#059669']}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name="view-in-ar" size={20} color="#fff" />
+                      <Text style={styles.pointsText}>+{POINT_VALUES.AR_PHOTO}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
-          )}
-
-          <View style={styles.locationFooter}>
-            <View style={styles.locationMetrics}>
-              <Text style={[
-                styles.locationDistance,
-                colorScheme === 'dark' && styles.locationDistanceDark
-              ]}>
-                {location.distance ? `${(location.distance / 1000).toFixed(1)} km away` : ''}
-              </Text>
-              {location.visitCount > 0 && (
-                <Text style={[
-                  styles.visitCount,
-                  colorScheme === 'dark' && styles.visitCountDark
-                ]}>
-                  {location.visitCount} {location.visitCount === 1 ? 'visit' : 'visits'}
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.badgeContainer}>
-              {location.hasStories && (
-                <TouchableOpacity
-                  style={styles.badge}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    // TODO: Show stories
-                  }}
-                >
-                  <MaterialIcons name="history-edu" size={14} color="#3b82f6" />
-                  <Text style={styles.badgeText}>Stories</Text>
-                </TouchableOpacity>
-              )}
-              {location.hasAR && (
-                <TouchableOpacity
-                  style={[styles.badge, styles.arBadge]}
-                  onPress={handleARPress}
-                >
-                  <MaterialIcons name="view-in-ar" size={14} color="#3b82f6" />
-                  <Text style={styles.badgeText}>AR</Text>
-                </TouchableOpacity>
-              )}
-            </View>
           </View>
-        </View>
+        </LinearGradient>
       </TouchableOpacity>
     </Animated.View>
   );
 };
 
-const ChallengeCard = ({ challenge, colorScheme }) => (
-  <View style={[
-    styles.challengeCard,
-    colorScheme === 'dark' && styles.challengeCardDark
-  ]}>
-    <View style={styles.challengeIcon}>
-      <MaterialIcons name={challenge.icon} size={24} color="#3b82f6" />
-    </View>
-    <View style={styles.challengeContent}>
-      <Text style={[
-        styles.challengeTitle,
-        colorScheme === 'dark' && styles.challengeTitleDark
-      ]}>
-        {challenge.title}
-      </Text>
-      <Text style={[
-        styles.challengeDescription,
-        colorScheme === 'dark' && styles.challengeDescriptionDark
-      ]}>
-        {challenge.description}
-      </Text>
-      <View style={styles.challengeProgress}>
-        <View style={styles.progressBar}>
-          <View 
-            style={[
-              styles.progressFill,
-              { width: `${(challenge.progress / challenge.target) * 100}%` }
-            ]}
-          />
-        </View>
-        <Text style={styles.progressText}>
-          {challenge.progress}/{challenge.target}
-        </Text>
-      </View>
-      <View style={styles.challengeReward}>
-        <MaterialIcons name="stars" size={16} color="#fbbf24" />
-        <Text style={styles.rewardText}>{challenge.points} points</Text>
-      </View>
-    </View>
-  </View>
-);
+const FilterModal = ({ visible, onClose, title, options, selectedValue, onSelect }) => {
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-const ExploreScreen = ({ navigation }) => {
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 11,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible]);
+
+  return (
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <Animated.View
+          style={[
+            styles.modalContent,
+            {
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <BlurView intensity={80} tint="dark" style={styles.modalBlur}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+                <MaterialIcons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsContainer}>
+              {options.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.optionButton,
+                    selectedValue === option.id && styles.optionButtonSelected,
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onSelect(option.id);
+                    onClose();
+                  }}
+                >
+                  <MaterialIcons
+                    name={option.icon}
+                    size={24}
+                    color={selectedValue === option.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                  />
+                  <Text
+                    style={[
+                      styles.optionText,
+                      selectedValue === option.id && styles.optionTextSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {selectedValue === option.id && (
+                    <MaterialIcons
+                      name="check"
+                      size={24}
+                      color="#fff"
+                      style={styles.optionCheckmark}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </BlurView>
+        </Animated.View>
+      </TouchableOpacity>
+    </Modal>
+    </KeyboardAvoidingView>
+  );
+};
+
+const ExploreScreen = ({ navigation, route }) => {
   const [locations, setLocations] = useState([]);
+  const [filteredLocations, setFilteredLocations] = useState([]);
+  const [allLocations, setAllLocations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [filterLoading, setFilterLoading] = useState(false); // New state for filter loading
   const [error, setError] = useState(null);
-  const [userPoints, setUserPoints] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState(route.params?.source === 'swipe' ? 'nearby' : 'all');
+  const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [permissionStatus, setPermissionStatus] = useState(null);
-  const [showChallenges, setShowChallenges] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  
-  const colorScheme = useColorScheme();
+  const [userPoints, setUserPoints] = useState(0);
+  const [userLevel, setUserLevel] = useState(null);
+  const [achievements, setAchievements] = useState([]);
+  const [recentAchievement, setRecentAchievement] = useState(null);
+  const [customLocation, setCustomLocation] = useState('');
+  const [currentCoords, setCurrentCoords] = useState(null);
+  const [predictions, setPredictions] = useState([]);
+  const [showPredictions, setShowPredictions] = useState(false);
+  const [localSearchResults, setLocalSearchResults] = useState([]);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const achievementAnim = useRef(new Animated.Value(0)).current;
+  const [selectedStoryType, setSelectedStoryType] = useState('all');
+  const [availableStoryTypes, setAvailableStoryTypes] = useState([]);
+  const [activeFilter, setActiveFilter] = useState(null);
 
   const filters = [
     { id: 'all', label: 'All', icon: 'public' },
@@ -265,41 +274,107 @@ const ExploreScreen = ({ navigation }) => {
     { id: 'stories', label: 'Stories', icon: 'history-edu' },
   ];
 
+  const periods = [
+    { id: 'all', label: 'All Periods', icon: 'timeline' },
+    { id: 'ancient', label: 'Ancient', icon: 'account-balance' },
+    { id: 'medieval', label: 'Medieval', icon: 'castle' },
+    { id: 'renaissance', label: 'Renaissance', icon: 'palette' },
+    { id: 'modern', label: 'Modern', icon: 'apartment' },
+    { id: 'contemporary', label: 'Contemporary', icon: 'business' },
+  ];
+
+  const storyTypeIcons = {
+    all: { label: 'All Stories', icon: 'auto-stories' },
+    music: { label: 'Music', icon: 'music-note' },
+    visualArt: { label: 'Visual Art', icon: 'palette' },
+    performingArt: { label: 'Performing Arts', icon: 'theater-comedy' },
+    architecture: { label: 'Architecture', icon: 'apartment' },
+    fashion: { label: 'Fashion', icon: 'style' },
+    culinary: { label: 'Culinary', icon: 'restaurant' },
+    landscape: { label: 'Landscape', icon: 'landscape' },
+    lore: { label: 'Lore', icon: 'auto-stories' },
+    paranormal: { label: 'Paranormal', icon: 'visibility' },
+    unsungHero: { label: 'Unsung Heroes', icon: 'person' },
+    popCulture: { label: 'Pop Culture', icon: 'movie' },
+    civilRights: { label: 'Civil Rights', icon: 'people' },
+    education: { label: 'Education', icon: 'school' }
+  };
+
+  const filterButtons = [
+    { id: 'sort', label: 'Sort', icon: 'sort' },
+    { id: 'period', label: 'Period', icon: 'history' },
+    { id: 'type', label: 'Type', icon: 'category' },
+  ];
+
   useEffect(() => {
-    console.log('ExploreScreen mounted');
     checkLocationPermission();
-    loadUserPoints();
+    loadUserData();
   }, []);
 
   useEffect(() => {
-    console.log('Permission status or filter changed:', { permissionStatus, selectedFilter });
-    if (permissionStatus === 'granted' || permissionStatus === 'denied') {
-      // Reset pagination when filter changes
-      setPage(1);
-      setLocations([]);
-      setHasMore(true);
-      fetchNearbyLocations(permissionStatus === 'denied', 1);
-    }
-  }, [permissionStatus, selectedFilter]);
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadUserData();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
-  const loadUserPoints = async () => {
-    // TODO: Load from persistent storage
-    setUserPoints(150);
+  useEffect(() => {
+    if (route.params?.refresh) {
+      loadUserData();
+      navigation.setParams({ refresh: undefined });
+    }
+  }, [route.params?.refresh]);
+
+  useEffect(() => {
+    if (permissionStatus === 'granted' || permissionStatus === 'denied') {
+      fetchNearbyLocations(permissionStatus === 'denied');
+    }
+  }, [permissionStatus, selectedPeriod]);
+
+  const loadUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const pointsData = await getUserPointsAndLevel(user.id);
+        const achievementsData = await getUserAchievements(user.id);
+        
+        setUserPoints(pointsData.points);
+        setUserLevel(pointsData);
+        setAchievements(achievementsData);
+
+        const recent = achievementsData[achievementsData.length - 1];
+        if (recent && new Date(recent.earned_at) > new Date(Date.now() - 5000)) {
+          setRecentAchievement(recent);
+          showAchievementAnimation();
+        }
+      }
+    } catch (err) {
+      console.error('Error loading user data:', err);
+    }
+  };
+
+  const showAchievementAnimation = () => {
+    achievementAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(achievementAnim, {
+        toValue: 1,
+        tension: 40,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.delay(3000),
+      Animated.timing(achievementAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      })
+    ]).start(() => setRecentAchievement(null));
   };
 
   const checkLocationPermission = async () => {
     try {
-      console.log('Checking location permission...');
-      const { status } = await Location.getForegroundPermissionsAsync();
-      console.log('Initial permission status:', status);
+      const { status } = await Location.requestForegroundPermissionsAsync();
       setPermissionStatus(status);
-      
-      if (status !== 'granted') {
-        console.log('Requesting location permission...');
-        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
-        console.log('New permission status:', newStatus);
-        setPermissionStatus(newStatus);
-      }
     } catch (err) {
       console.error('Error checking location permission:', err);
       setError('Failed to check location permissions');
@@ -307,219 +382,345 @@ const ExploreScreen = ({ navigation }) => {
     }
   };
 
-  const fetchNearbyLocations = async (skipLocation = false, currentPage = page) => {
+  const fetchPlacePredictions = useCallback(
+    debounce(async (input) => {
+      if (!input.trim()) {
+        setPredictions([]);
+        setLocalSearchResults([]);
+        setShowPredictions(false);
+        return;
+      }
+
+      try {
+        // Search through local locations first
+        const searchTerm = input.toLowerCase();
+        const matchingLocations = locations.filter(location => 
+          location.title.toLowerCase().includes(searchTerm) ||
+          (location.content && typeof location.content === 'string' && 
+           JSON.parse(location.content).story_location?.toLowerCase().includes(searchTerm))
+        );
+        setLocalSearchResults(matchingLocations);
+
+        // Then fetch Google Maps predictions
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+            input
+          )}&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
+        );
+        const data = await response.json();
+        
+        if (data.results) {
+          const predictions = data.results.map(result => ({
+            place_id: result.place_id,
+            description: result.formatted_address,
+            structured_formatting: {
+              main_text: result.address_components[0].long_name,
+              secondary_text: result.formatted_address.split(',').slice(1).join(',').trim()
+            },
+            geometry: result.geometry
+          }));
+          setPredictions(predictions);
+          setShowPredictions(true);
+        }
+      } catch (err) {
+        console.error('Error fetching predictions:', err);
+      }
+    }, 300),
+    [locations]
+  );
+
+  const handleLocationSelect = async (prediction) => {
     try {
-      const isFirstPage = currentPage === 1;
-      if (isFirstPage) {
-        setLoading(true);
-      } else {
-        setLoadingMore(true);
-      }
+      Keyboard.dismiss();
+      setLoading(true);
+      setShowPredictions(false);
+      setCustomLocation(prediction.description);
+      setFilterLoading(true); // Show filter loading
 
-      let locationData = null;
-
-      if (!skipLocation && permissionStatus === 'granted') {
-        console.log('Getting current position...');
-        locationData = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        console.log('Current position:', locationData);
-      }
-
-      let result;
-      if (locationData) {
-        console.log('Fetching locations with coordinates:', {
-          lat: locationData.coords.latitude,
-          lng: locationData.coords.longitude,
-          page: currentPage
-        });
-        result = await getNearbyLocations(
-          locationData.coords.latitude,
-          locationData.coords.longitude,
-          selectedFilter,
-          5000,
-          currentPage
-        );
-      } else {
-        console.log('Fetching locations without coordinates');
-        result = await getNearbyLocations(
-          null,
-          null,
-          selectedFilter,
-          5000,
-          currentPage
-        );
-      }
-
-      console.log('Fetched locations:', result);
-
-      setLocations(prev => 
-        currentPage === 1 ? result.locations : [...prev, ...result.locations]
-      );
-      setHasMore(result.hasMore);
-      setError(null);
+      const { lat, lng } = prediction.geometry.location;
+      setCurrentCoords({ latitude: lat, longitude: lng });
+      await fetchNearbyLocations(false, { latitude: lat, longitude: lng });
     } catch (err) {
-      console.error('Error fetching locations:', err);
+      console.error('Error selecting location:', err);
+      Alert.alert('Error', 'Failed to get location details');
+    } finally {
+      setLoading(false);
+      setFilterLoading(false); // Hide filter loading
+    }
+  };
+
+  const handleLocalLocationSelect = (location) => {
+    Keyboard.dismiss();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowPredictions(false);
+    setCustomLocation('');
+    setFilterLoading(true); // Show filter loading
+    handleLocationPress(location);
+    setFilterLoading(false); // Hide filter loading
+    };
+
+  const searchLocation = async () => {
+    if (!customLocation.trim()) {
+      Alert.alert('Error', 'Please enter a location');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(customLocation)}&key=${env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0) {
+        const { lat, lng } = data.results[0].geometry.location;
+        setCurrentCoords({ latitude: lat, longitude: lng });
+        fetchNearbyLocations(false, { latitude: lat, longitude: lng });
+      } else {
+        Alert.alert('Error', 'Location not found');
+      }
+    } catch (err) {
+      console.error('Error searching location:', err);
+      Alert.alert('Error', 'Failed to search location');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyFilters = useCallback((locations, storyType, period) => {
+    let filtered = [...locations];
+
+    // Apply period filter
+    if (period !== 'all') {
+      filtered = filtered.filter(loc => 
+        loc.period?.toLowerCase().includes(period.toLowerCase())
+      );
+    }
+
+    // Apply story type filter
+    if (storyType !== 'all') {
+      const normalizedSelectedType = storyType.toLowerCase().replace(/([A-Z])/g, '_$1');
+      filtered = filtered.filter(loc => {
+        if (!Array.isArray(loc.story_types)) return false;
+        const normalizedLocationTypes = loc.story_types.map(type => 
+          type.toLowerCase().replace(/([A-Z])/g, '_$1')
+        );
+        return normalizedLocationTypes.includes(normalizedSelectedType);
+      });
+    }
+
+    return filtered;
+  }, []);
+
+  const fetchNearbyLocations = async (skipLocation = false, customCoords = null, filterOverride = null) => {
+    setLoading(true);
+    try {
+      let locationData = null;
+      if (!skipLocation) {
+        if (customCoords) {
+          locationData = { coords: customCoords };
+        } else {
+          locationData = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setCurrentCoords(locationData.coords);
+        }
+      }
+
+      const searchRadius = (filterOverride || selectedFilter) === 'nearby' ? 5000 : 50000;
+
+      const result = await getNearbyLocations(
+        locationData?.coords.latitude,
+        locationData?.coords.longitude,
+        filterOverride || selectedFilter,
+        searchRadius
+      );
+
+      if (result?.locations) {
+        // Parse story types for each location
+        const parsedLocations = result.locations.map(loc => ({
+          ...loc,
+          story_types: (() => {
+            try {
+              if (Array.isArray(loc.story_types)) {
+                return loc.story_types;
+              }
+              if (typeof loc.story_types === 'string') {
+                const parsed = JSON.parse(loc.story_types);
+                return Array.isArray(parsed) ? parsed : [];
+              }
+              return [];
+            } catch (err) {
+              console.error('[ExploreScreen] Error parsing story types:', err);
+              return [];
+            }
+          })()
+        }));
+
+        // Store all locations
+        setAllLocations(parsedLocations);
+
+        // Apply current filters
+        const filtered = applyFilters(parsedLocations, selectedStoryType, selectedPeriod);
+        setFilteredLocations(filtered);
+        setLocations(filtered);
+
+        // Collect all unique story types
+        const types = new Set(['all']);
+        parsedLocations.forEach(loc => {
+          if (Array.isArray(loc.story_types)) {
+            loc.story_types.forEach(type => types.add(type));
+          }
+        });
+
+        setAvailableStoryTypes(Array.from(types));
+        setError(null);
+      }
+    } catch (err) {
+      console.error('[ExploreScreen] Error fetching locations:', err);
       setError('Failed to fetch locations');
     } finally {
       setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
     }
   };
 
-  const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchNearbyLocations(permissionStatus === 'denied', nextPage);
-    }
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    setPage(1);
-    setLocations([]);
-    setHasMore(true);
-    fetchNearbyLocations(permissionStatus === 'denied', 1);
-  };
-
-  const handleLocationPress = (location) => {
-    navigation.navigate('LocationDetail', { 
-      location: {
-        ...location,
-        aiGeneratedStory: location.aiGeneratedStory,
-      }
+  const handleFilterSelect = (filterId, value) => {
+    console.log('[ExploreScreen] Filter selected:', {
+      filterId,
+      value,
+      previousValue: getSelectedValue(filterId)
     });
+
+    switch (filterId) {
+      case 'sort':
+        setSelectedFilter(value);
+        if (currentCoords) {
+          fetchNearbyLocations(false, currentCoords, value);
+        } else {
+          fetchNearbyLocations(value === 'all', null, value);
+        }
+        break;
+      case 'period':
+        setSelectedPeriod(value);
+        const periodFiltered = applyFilters(allLocations, selectedStoryType, value);
+        setFilteredLocations(periodFiltered);
+        setLocations(periodFiltered);
+        break;
+      case 'type':
+        setSelectedStoryType(value);
+        const typeFiltered = applyFilters(allLocations, value, selectedPeriod);
+        setFilteredLocations(typeFiltered);
+        setLocations(typeFiltered);
+        break;
+    }
   };
 
-  const handleARPress = (location) => {
+  const handleLocationPress = useCallback((location) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate('LocationDetail', { location });
+  }, [navigation]);
+
+  const handleARPress = useCallback((location) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate('ARView', { location });
+  }, [navigation]);
+
+  const getSelectedValue = (filterId) => {
+    switch (filterId) {
+      case 'sort':
+        return selectedFilter;
+      case 'period':
+        return selectedPeriod;
+      case 'type':
+        return selectedStoryType;
+      default:
+        return null;
+    }
   };
 
-  const renderLocationItem = ({ item }) => (
-    <LocationCard
-      location={item}
-      onPress={() => handleLocationPress(item)}
-      onARPress={() => handleARPress(item)}
-      colorScheme={colorScheme}
-    />
-  );
-
-  const renderFooter = () => {
-    if (!loadingMore) return null;
-    return (
-      <View style={styles.loadingMore}>
-        <ActivityIndicator size="small" color="#3b82f6" />
-        <Text style={styles.loadingMoreText}>Loading more locations...</Text>
-      </View>
-    );
+  const getFilterOptions = (filterId) => {
+    switch (filterId) {
+      case 'sort':
+        return filters.map(f => ({
+          id: f.id,
+          label: f.label,
+          icon: f.icon,
+        }));
+      case 'period':
+        return periods.map(p => ({
+          id: p.id,
+          label: p.label,
+          icon: p.icon,
+        }));
+      case 'type':
+        return availableStoryTypes.map(typeId => {
+          // If we have a predefined icon/label for this type, use it
+          if (storyTypeIcons[typeId]) {
+            return {
+              id: typeId,
+              ...storyTypeIcons[typeId],
+            };
+          }
+          // Otherwise create a default icon/label
+          return {
+            id: typeId,
+            label: typeId.charAt(0).toUpperCase() + typeId.slice(1).replace(/([A-Z])/g, ' $1'),
+            icon: 'category'
+          };
+        });
+      default:
+        return [];
+    }
   };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.filterContainer}>
-        {filters.map((filter) => (
-          <TouchableOpacity
-            key={filter.id}
-            style={[
-              styles.filterButton,
-              selectedFilter === filter.id && styles.filterButtonActive,
-            ]}
-            onPress={() => {
-              setSelectedFilter(filter.id);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-          >
-            <MaterialIcons
-              name={filter.icon}
-              size={20}
-              color={selectedFilter === filter.id ? '#3b82f6' : '#64748b'}
-            />
-            <Text
-              style={[
-                styles.filterText,
-                selectedFilter === filter.id && styles.filterTextActive,
-              ]}
-            >
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+  const getActiveFilters = () => {
+    const active = [];
+    if (selectedFilter !== 'all') {
+      const filter = filters.find(f => f.id === selectedFilter);
+      if (filter) active.push(filter.label);
+    }
+    if (selectedPeriod !== 'all') {
+      const period = periods.find(p => p.id === selectedPeriod);
+      if (period) active.push(period.label);
+    }
+    if (selectedStoryType !== 'all') {
+      // If we have a predefined icon/label for this type, use it
+      const type = storyTypeIcons[selectedStoryType];
+      if (type) {
+        active.push(type.label);
+      } else {
+        // Otherwise create a formatted label
+        active.push(selectedStoryType.charAt(0).toUpperCase() + 
+          selectedStoryType.slice(1).replace(/([A-Z])/g, ' $1'));
+      }
+    }
+    return active;
+  };
 
-      {showChallenges && (
-        <View style={styles.challengesContainer}>
-          <Text style={[
-            styles.challengesTitle,
-            colorScheme === 'dark' && styles.challengesTitleDark
-          ]}>
-            Daily Challenges
-          </Text>
-          <FlatList
-            horizontal
-            data={CHALLENGES}
-            renderItem={({ item }) => (
-              <ChallengeCard challenge={item} colorScheme={colorScheme} />
-            )}
-            keyExtractor={item => item.id}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.challengesList}
-          />
-        </View>
-      )}
-    </View>
-  );
+  const clearSearch = () => {
+    setCustomLocation('');
+    setPredictions([]);
+    setLocalSearchResults([]);
+    setShowPredictions(false);
+  };
 
-  if (loading && !refreshing) {
+  if (loading) {
     return (
-      <View style={[
-        styles.centerContainer,
-        colorScheme === 'dark' && styles.centerContainerDark
-      ]}>
-        <MaterialIcons name="explore" size={48} color="#3b82f6" />
-        <Text style={[
-          styles.messageText,
-          colorScheme === 'dark' && styles.messageTextDark
-        ]}>
-          Finding nearby historical sites...
-        </Text>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Discovering historical sites...</Text>
       </View>
     );
   }
 
-  if (permissionStatus === 'denied' && !locations.length) {
+  if (error) {
     return (
-      <View style={[
-        styles.centerContainer,
-        colorScheme === 'dark' && styles.centerContainerDark
-      ]}>
-        <MaterialIcons name="location-off" size={48} color="#ef4444" />
-        <Text style={styles.errorText}>Location access is required</Text>
-        <Text style={[
-          styles.messageText,
-          colorScheme === 'dark' && styles.messageTextDark
-        ]}>
-          Please enable location access to discover historical sites near you.
-        </Text>
-        <TouchableOpacity style={styles.retryButton} onPress={openSettings}>
-          <Text style={styles.retryButtonText}>Open Settings</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (error && !locations.length) {
-    return (
-      <View style={[
-        styles.centerContainer,
-        colorScheme === 'dark' && styles.centerContainerDark
-      ]}>
+      <View style={styles.centerContainer}>
         <MaterialIcons name="error-outline" size={48} color="#ef4444" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
           style={styles.retryButton}
-          onPress={() => fetchNearbyLocations()}
+          onPress={() => fetchNearbyLocations(permissionStatus === 'denied')}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
@@ -528,483 +729,730 @@ const ExploreScreen = ({ navigation }) => {
   }
 
   return (
-    <SafeAreaView style={[
-      styles.container,
-      colorScheme === 'dark' && styles.containerDark
-    ]}>
-      <View style={[
-        styles.pointsBanner,
-        colorScheme === 'dark' && styles.pointsBannerDark
-      ]}>
-        <MaterialIcons name="stars" size={20} color="#fbbf24" />
-        <Text style={styles.pointsText}>{userPoints} points</Text>
-        <TouchableOpacity
-          style={styles.challengesButton}
-          onPress={() => {
-            setShowChallenges(!showChallenges);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }}
-        >
-          <MaterialIcons
-            name={showChallenges ? "expand-less" : "expand-more"}
-            size={24}
-            color="#fbbf24"
-          />
-        </TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <SafeAreaView style={styles.container}>
+        {recentAchievement && (
+          <Animated.View style={[
+            styles.achievementPopup,
+            {
+              transform: [
+                { scale: achievementAnim },
+                { translateY: achievementAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-100, 0]
+                })}
+              ],
+              opacity: achievementAnim
+            }
+          ]}>
+            <BlurView intensity={80} tint="dark" style={styles.achievementContent}>
+              <MaterialIcons name={recentAchievement.icon} size={24} color="#fbbf24" />
+              <View>
+                <Text style={styles.achievementTitle}>{recentAchievement.title}</Text>
+                <Text style={styles.achievementDesc}>{recentAchievement.description}</Text>
+              </View>
+              <Text style={styles.achievementPoints}>+{recentAchievement.points}</Text>
+            </BlurView>
+          </Animated.View>
+        )}
 
-      <FlatList
-        data={locations}
-        renderItem={renderLocationItem}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialIcons
-              name="location-off"
-              size={48}
-              color={colorScheme === 'dark' ? '#64748b' : '#94a3b8'}
-            />
-            <Text style={[
-              styles.messageText,
-              colorScheme === 'dark' && styles.messageTextDark
-            ]}>
-              No historical sites found
-            </Text>
-            <Text style={[
-              styles.submessageText,
-              colorScheme === 'dark' && styles.submessageTextDark
-            ]}>
-              Try adjusting your filters or exploring a different area
-            </Text>
+        <BlurView intensity={80} tint="dark" style={styles.header}>
+          <LinearGradient
+            colors={['rgba(251, 191, 36, 0.1)', 'rgba(251, 191, 36, 0.05)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.levelBanner}
+          >
+            <View style={styles.levelInfo}>
+              <View style={styles.medalContainer}>
+                <MaterialIcons name="military-tech" size={24} color="#fbbf24" />
+              </View>
+              <View style={styles.levelTextContainer}>
+                <Text style={styles.levelTitle}>Level {userLevel?.level}</Text>
+                <Text style={styles.levelSubtitle}>{userLevel?.title || 'Explorer'}</Text>
+              </View>
+              <View style={styles.pointsContainer}>
+                <Text style={styles.pointsValue}>{userPoints}</Text>
+                <Text style={styles.pointsLabel}>PTS</Text>
+              </View>
+            </View>
+          </LinearGradient>
+
+          <View style={styles.searchWrapper}>
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.searchContainer}
+            >
+              <MaterialIcons name="search" size={22} color="rgba(255, 255, 255, 0.6)" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search location..."
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                value={customLocation}
+                onChangeText={(text) => {
+                  setCustomLocation(text);
+                  fetchPlacePredictions(text);
+                }}
+                onSubmitEditing={searchLocation}
+              />
+              {customLocation.length > 0 && (
+                <TouchableOpacity 
+                  onPress={clearSearch}
+                  style={styles.clearButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialIcons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+                </TouchableOpacity>
+              )}
+            </LinearGradient>
+
+            {showPredictions && (predictions.length > 0 || localSearchResults.length > 0) && (
+              <View style={styles.predictionsWrapper}>
+                <BlurView intensity={80} tint="dark" style={styles.predictionsContainer}>
+                  <ScrollView 
+                    style={styles.predictionsScroll}
+                    bounces={false} 
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled={true}
+                  >
+                    {localSearchResults.length > 0 && (
+                      <View>
+                        <View style={styles.predictionSectionHeader}>
+                          <MaterialIcons name="history-edu" size={18} color="rgba(255, 255, 255, 0.6)" />
+                          <Text style={styles.predictionSectionTitle}>Story Locations</Text>
+                        </View>
+                        {localSearchResults.map((location) => (
+                          <TouchableOpacity
+                            key={location.id}
+                            style={styles.predictionItem}
+                            onPress={() => handleLocalLocationSelect(location)}
+                          >
+                            <MaterialIcons name="auto-stories" size={18} color="#10b981" />
+                            <View style={styles.predictionTextContainer}>
+                              <Text style={styles.predictionMainText}>
+                                {location.title}
+                              </Text>
+                              <Text style={styles.predictionSecondaryText}>
+                                {typeof location.content === 'string' 
+                                  ? JSON.parse(location.content).story_location 
+                                  : location.content?.story_location}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    {predictions.length > 0 && (
+                      <View>
+                        <View style={styles.predictionSectionHeader}>
+                          <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                          <Text style={styles.predictionSectionTitle}>Places</Text>
+                        </View>
+                        {predictions.map((prediction) => (
+                          <TouchableOpacity
+                            key={prediction.place_id}
+                            style={styles.predictionItem}
+                            onPress={() => handleLocationSelect(prediction)}
+                          >
+                            <MaterialIcons name="place" size={18} color="rgba(255, 255, 255, 0.6)" />
+                            <View style={styles.predictionTextContainer}>
+                              <Text style={styles.predictionMainText}>
+                                {prediction.structured_formatting.main_text}
+                              </Text>
+                              <Text style={styles.predictionSecondaryText}>
+                                {prediction.structured_formatting.secondary_text}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </ScrollView>
+                </BlurView>
+              </View>
+            )}
           </View>
-        }
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-      />
 
-      <View style={styles.fabContainer}>
-        <TouchableOpacity
-          style={[styles.fab, styles.arFab]}
-          onPress={() => {
-            navigation.navigate('ARView');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-        >
-          <MaterialIcons name="view-in-ar" size={24} color="#ffffff" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.fab, styles.createFab]}
-          onPress={() => {
-            navigation.navigate('CreateStory');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-        >
-          <MaterialIcons name="add" size={24} color="#ffffff" />
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          <View style={styles.filterButtons}>
+            {filterButtons.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterButton,
+                  activeFilter === filter.id && styles.filterButtonActive,
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveFilter(filter.id);
+                }}
+              >
+                <LinearGradient
+                  colors={activeFilter === filter.id ? 
+                    ['rgba(59, 130, 246, 0.3)', 'rgba(37, 99, 235, 0.3)'] : 
+                    ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.filterButtonGradient}
+                >
+                  <MaterialIcons
+                    name={filter.icon}
+                    size={20}
+                    color={activeFilter === filter.id ? '#fff' : 'rgba(255, 255, 255, 0.6)'}
+                  />
+                  <Text style={[
+                    styles.filterButtonLabel,
+                    activeFilter === filter.id && styles.filterButtonLabelActive
+                  ]}>
+                    {filter.label}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {getActiveFilters().length > 0 && (
+            <BlurView intensity={30} tint="dark" style={styles.activeFiltersContainer}>
+              {getActiveFilters().map((filter, index) => (
+                <Text key={index} style={styles.activeFilterText}>
+                  {filter}
+                  {index < getActiveFilters().length - 1 ? ' • ' : ''}
+                </Text>
+              ))}
+            </BlurView>
+          )}
+        </BlurView>
+
+        {filterLoading ? (
+          <View style={styles.filterLoadingContainer}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={styles.filterLoadingText}>Filtering stories...</Text>
+          </View>
+        ) : (
+          <Animated.FlatList
+            data={filteredLocations}
+            renderItem={({ item, index }) => (
+              <LocationCard
+                location={item}
+                onPress={() => handleLocationPress(item)}
+                onARPress={() => handleARPress(item)}
+                index={index}
+                scrollX={scrollX}
+              />
+            )}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal
+            pagingEnabled
+            snapToInterval={CARD_WIDTH + SPACING * 2}
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: true }
+            )}
+            scrollEventThrottle={16}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="search-off" size={48} color="rgba(255, 255, 255, 0.6)" />
+                <Text style={styles.emptyText}>No locations found</Text>
+                <Text style={styles.emptySubtext}>Try a different filter or explore another area</Text>
+              </View>
+            }
+          />
+        )}
+
+        {filterButtons.map((filter) => (
+          <FilterModal
+            key={filter.id}
+            visible={activeFilter === filter.id}
+            onClose={() => setActiveFilter(null)}
+            title={filter.label}
+            options={getFilterOptions(filter.id)}
+            selectedValue={getSelectedValue(filter.id)}
+            onSelect={(value) => handleFilterSelect(filter.id, value)}
+          />
+        ))}
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  containerDark: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#000',
   },
   header: {
+    paddingTop: HEADER_HEIGHT,
     paddingHorizontal: 16,
     paddingBottom: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  pointsBanner: {
+  levelBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    shadowColor: '#fbbf24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  levelInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    justifyContent: 'space-between',
   },
-  pointsBannerDark: {
-    backgroundColor: 'rgba(251, 191, 36, 0.05)',
+  medalContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
-  pointsText: {
+  levelTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 'auto',
+  },
+  levelTitle: {
     color: '#fbbf24',
+    fontSize: 18,
+    fontWeight: '700',
+    textShadowColor: 'rgba(251, 191, 36, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  levelSubtitle: {
+    color: '#fff',
+    fontSize: 13,
+    opacity: 0.8,
+    marginTop: 2,
+  },
+  pointsContainer: {
+    alignItems: 'flex-end',
+    minWidth: 80,
+  },
+  pointsValue: {
+    color: '#fbbf24',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  pointsLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.8,
+    marginTop: 2,
+  },
+  searchWrapper: {
+    marginTop: 16,
+    zIndex: 2000,
+    elevation: 2000,
+    position: 'relative',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
     fontSize: 16,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  predictionsWrapper: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    zIndex: 2000,
+    elevation: 2000,
+  },
+  predictionsContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    maxHeight: SCREEN_HEIGHT * 0.4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  predictionsScroll: {
+    flexGrow: 0,
+  },
+  predictionSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    gap: 8,
+  },
+  predictionSectionTitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
     fontWeight: '600',
-    marginLeft: 8,
+  },
+  predictionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  predictionTextContainer: {
     flex: 1,
   },
-  challengesButton: {
-    padding: 4,
+  predictionMainText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
-  filterContainer: {
+  predictionSecondaryText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  filterButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 4,
+    marginTop: 16,
+    gap: 8,
   },
   filterButton: {
     flex: 1,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  filterButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterButtonLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterButtonLabelActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  activeFiltersContainer: {
+    marginTop: 12,
+    marginHorizontal: 16,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  filterButtonActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-  },
-  filterText: {
-    color: '#64748b',
-    fontSize: 14,
-    marginLeft: 4,
-  },
-  filterTextActive: {
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  challengesContainer: {
-    marginTop: 16,
-  },
-  challengesTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
-  challengesTitleDark: {
-    color: '#ffffff',
-  },
-  challengesList: {
-    paddingRight: 16,
-  },
-  challengeCard: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 12,
-    width: 280,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  challengeCardDark: {
-    backgroundColor: '#1e293b',
-  },
-  challengeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  challengeContent: {
-    flex: 1,
-  },
-  challengeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  challengeTitleDark: {
-    color: '#ffffff',
-  },
-  challengeDescription: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 8,
-  },
-  challengeDescriptionDark: {
-    color: '#94a3b8',
-  },
-  challengeProgress: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  progressBar: {
-    flex: 1,
-    height: 4,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 2,
-    marginRight: 8,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  challengeReward: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rewardText: {
-    fontSize: 12,
-    color: '#fbbf24',
-    marginLeft: 4,
-  },
-  listContainer: {
-    padding: 16,
-  },
-  locationCard: {
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
     borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  locationCardDark: {
-    backgroundColor: '#1e293b',
-  },
-  locationImage: {
-    width: '100%',
-    height: 200,
-  },
-  locationContent: {
-    padding: 16,
-  },
-  locationHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  activeFilterText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    opacity: 0.9,
+    paddingHorizontal: 4,
+  },
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  cardContent: {
+    padding: 20,
+  },
+  cardHeader: {
+    marginBottom: 12,
   },
   locationTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginRight: 8,
-  },
-  locationTitleDark: {
-    color: '#ffffff',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  ratingText: {
-    color: '#fbbf24',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  locationDescription: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 12,
-  },
-  locationDescriptionDark: {
-    color: '#94a3b8',
-  },
-  truncatedText: {
-    marginBottom: 4,
-  },
-  aiInsights: {
-    backgroundColor: 'rgba(59, 130, 246, 0.05)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  aiInsightsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
     marginBottom: 8,
   },
-  aiInsightsTitleDark: {
-    color: '#ffffff',
+  locationDescription: {
+    fontSize: 16,
+    color: '#e2e8f0',
+    marginBottom: 16,
+    lineHeight: 24,
   },
-  factsList: {
-    gap: 8,
-  },
-  factItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  factText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginLeft: 8,
-    flex: 1,
-  },
-  factTextDark: {
-    color: '#94a3b8',
-  },
-  locationFooter: {
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  locationInfo: {
+    gap: 8,
+  },
+  distanceBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
   },
-  locationMetrics: {
-    flexDirection: 'column',
+  distanceText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
   },
-  locationDistance: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 4,
+  storiesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
   },
-  locationDistanceDark: {
-    color: '#94a3b8',
+  storiesText: {
+    color: '#10b981',
+    fontSize: 14,
+    fontWeight: '500',
   },
-  visitCount: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  visitCountDark: {
-    color: '#94a3b8',
-  },
-  badgeContainer: {
+  actions: {
     flexDirection: 'row',
     gap: 8,
   },
-  badge: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 8,
   },
-  arBadge: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+  pointsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
-  badgeText: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
-  fabContainer: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    gap: 16,
+  modalContent: {
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    maxHeight: SCREEN_HEIGHT * 0.7,
   },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
+  modalBlur: {
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-      },
-      android: {
-        elevation: 5,
-      },
-    }),
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  arFab: {
-    backgroundColor: '#3b82f6',
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
   },
-  createFab: {
-    backgroundColor: '#10b981',
+  modalCloseButton: {
+    padding: 4,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  optionButtonSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  optionText: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  optionTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  optionCheckmark: {
+    marginLeft: 'auto',
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
     padding: 20,
-    backgroundColor: '#ffffff',
   },
-  centerContainerDark: {
-    backgroundColor: '#0f172a',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  messageText: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center',
+  loadingText: {
     marginTop: 16,
-  },
-  messageTextDark: {
-    color: '#94a3b8',
-  },
-  submessageText: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  submessageTextDark: {
-    color: '#64748b',
+    fontSize: 16,
+    color: '#e2e8f0',
   },
   errorText: {
     fontSize: 16,
     color: '#ef4444',
     textAlign: 'center',
     marginTop: 16,
-    marginBottom: 8,
   },
   retryButton: {
-    backgroundColor: '#3b82f6',
+    marginTop: 16,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
   },
   retryButtonText: {
-    color: '#ffffff',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
-  loadingMore: {
-    flexDirection: 'row',
+  emptyContainer: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 24,
+    marginHorizontal: SPACING,
   },
-  loadingMoreText: {
-    marginLeft: 8,
+  emptyText: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 32,
+  },
+  achievementPopup: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+  },
+  achievementContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 20,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  achievementTitle: {
+    color: '#fbbf24',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  achievementDesc: {
+    color: '#e2e8f0',
     fontSize: 14,
-    color: '#64748b',
+  },
+  achievementPoints: {
+    color: '#fbbf24',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
+  listContent: {
+    paddingVertical: 24,
+    paddingHorizontal: SPACING,
+  },
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    marginHorizontal: SPACING,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a2e',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  cardTouchable: {
+    flex: 1,
+  },
+  locationImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  topLabelOverlay: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  topLabelText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.9,
+  },
+  filterLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  filterLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#e2e8f0',
+    textAlign: 'center',
   },
 });
 

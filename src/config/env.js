@@ -6,9 +6,10 @@ const env = {
   EXPO_PUBLIC_SUPABASE_SERVICE_KEY: process.env.EXPO_PUBLIC_SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkdXFqcGxnamt3aWR5dGlmdHp4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMTYyMjA1MSwiZXhwIjoyMDQ3MTk4MDUxfQ.5GUZIIT4GyL7Yn6BLb7q26h4uNgYYSM9Ma2b8jESj-o',
 
   // Google Cloud Configuration
-  EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT: process.env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT || 'microhistory-441722',
+  EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT: process.env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT || 'microhistory-441503',
   EXPO_PUBLIC_GOOGLE_CLOUD_LOCATION: process.env.EXPO_PUBLIC_GOOGLE_CLOUD_LOCATION || 'us-east1',
   EXPO_PUBLIC_GOOGLE_CREDENTIALS: process.env.EXPO_PUBLIC_GOOGLE_CREDENTIALS,
+  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyDsYqv3TJcbn9fksUyy8FqkO5GHD3tHx5s',
 
   // ElevenLabs Configuration
   EXPO_PUBLIC_ELEVENLABS_API_KEY: process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || 'sk_3bef40b49878e30b2e07b6f918b1bd3c135e4cf4a347a14d',
@@ -40,7 +41,7 @@ const env = {
 
   // API Endpoints
   getGoogleCloudEndpoint: () => {
-    return `https://${process.env.EXPO_PUBLIC_GOOGLE_CLOUD_LOCATION || 'us-east1'}-${process.env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT || 'microhistory-441722'}.cloudfunctions.net`;
+    return `https://${process.env.EXPO_PUBLIC_GOOGLE_CLOUD_LOCATION || 'us-east1'}-${process.env.EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT || 'microhistory-441503'}.cloudfunctions.net`;
   },
 
   getElevenLabsEndpoint: () => {
@@ -65,6 +66,7 @@ const env = {
       'EXPO_PUBLIC_GOOGLE_CLOUD_PROJECT',
       'EXPO_PUBLIC_GOOGLE_CLOUD_LOCATION',
       'EXPO_PUBLIC_ELEVENLABS_API_KEY',
+      'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'
     ];
 
     const missingVars = requiredVars.filter(varName => !env[varName]);

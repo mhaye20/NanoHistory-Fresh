@@ -7,6 +7,7 @@ import {
   Animated,
   Platform,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -14,11 +15,16 @@ import { Audio } from 'expo-av';
 import { GLView } from 'expo-gl';
 import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MotiView, AnimatePresence } from 'moti';
 import { Renderer } from 'expo-three';
 import { AmbientLight, PerspectiveCamera, PointLight, Scene } from 'three';
 import { Asset } from 'expo-asset';
 import { generateARContent } from '../services/ai';
 import { MaterialIcons } from '@expo/vector-icons';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const ARViewScreen = ({ route, navigation }) => {
   const { location, userContext } = route.params || {};
@@ -213,7 +219,14 @@ const ARViewScreen = ({ route, navigation }) => {
   if (hasPermission === null) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.messageText}>Requesting permissions...</Text>
+        <MotiView
+          from={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 600 }}
+        >
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.messageText}>Requesting permissions...</Text>
+        </MotiView>
       </View>
     );
   }
@@ -221,12 +234,29 @@ const ARViewScreen = ({ route, navigation }) => {
   if (hasPermission === false) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>
-          Camera, location, and audio permissions are required for AR features.
-        </Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermissions}>
-          <Text style={styles.buttonText}>Grant Permissions</Text>
-        </TouchableOpacity>
+        <MotiView
+          from={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 600 }}
+        >
+          <MaterialIcons name="error-outline" size={48} color="#ef4444" />
+          <Text style={styles.errorText}>
+            Camera, location, and audio permissions are required for AR features.
+          </Text>
+          <TouchableOpacity 
+            style={styles.button}
+            onPress={requestPermissions}
+          >
+            <LinearGradient
+              colors={['#3b82f6', '#2563eb']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.buttonGradient}
+            >
+              <Text style={styles.buttonText}>Grant Permissions</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </MotiView>
       </View>
     );
   }
@@ -234,7 +264,14 @@ const ARViewScreen = ({ route, navigation }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.messageText}>Preparing immersive AR experience...</Text>
+        <MotiView
+          from={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 600 }}
+        >
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.messageText}>Preparing immersive AR experience...</Text>
+        </MotiView>
       </View>
     );
   }
@@ -242,13 +279,27 @@ const ARViewScreen = ({ route, navigation }) => {
   if (error) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.button} 
-          onPress={() => navigation.goBack()}
+        <MotiView
+          from={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 600 }}
         >
-          <Text style={styles.buttonText}>Go Back</Text>
-        </TouchableOpacity>
+          <MaterialIcons name="error-outline" size={48} color="#ef4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.button}
+            onPress={() => navigation.goBack()}
+          >
+            <LinearGradient
+              colors={['#3b82f6', '#2563eb']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.buttonGradient}
+            >
+              <Text style={styles.buttonText}>Go Back</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </MotiView>
       </View>
     );
   }
@@ -269,69 +320,118 @@ const ARViewScreen = ({ route, navigation }) => {
             },
           ]}
         >
-          {arContent?.models?.map((model) => (
-            <TouchableOpacity
-              key={model.id}
-              style={[
-                styles.poiMarker,
-                activePoint?.id === model.id && styles.activePoi,
-                {
-                  transform: [
-                    { translateX: model.position.x * 100 },
-                    { translateY: model.position.y * 100 },
-                    { scale: activePoint?.id === model.id ? 1.1 : 1 },
-                  ],
-                },
-              ]}
-              onPress={() => handlePoiPress(model)}
-            >
-              <Text style={styles.poiTitle}>{model.title}</Text>
-              {activePoint?.id === model.id && (
-                <View style={styles.poiContent}>
-                  <Text style={styles.poiDescription}>{model.description}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
+          <AnimatePresence>
+            {arContent?.models?.map((model) => (
+              <MotiView
+                key={model.id}
+                from={{ opacity: 0, scale: 0.5 }}
+                animate={{ 
+                  opacity: 1,
+                  scale: activePoint?.id === model.id ? 1.1 : 1,
+                }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ 
+                  type: 'spring',
+                  damping: 15,
+                }}
+                style={[
+                  styles.poiMarker,
+                  {
+                    transform: [
+                      { translateX: model.position.x * 100 },
+                      { translateY: model.position.y * 100 },
+                    ],
+                  },
+                ]}
+              >
+                <BlurView intensity={80} tint="dark" style={styles.poiContent}>
+                  <TouchableOpacity
+                    onPress={() => handlePoiPress(model)}
+                    style={styles.poiTouchable}
+                  >
+                    <MaterialIcons 
+                      name="place"
+                      size={24}
+                      color="#ffffff"
+                      style={styles.poiIcon}
+                    />
+                    <Text style={styles.poiTitle}>{model.title}</Text>
+                    
+                    <AnimatePresence>
+                      {activePoint?.id === model.id && (
+                        <MotiView
+                          from={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ type: 'timing', duration: 300 }}
+                          style={styles.poiDetails}
+                        >
+                          <Text style={styles.poiDescription}>
+                            {model.description}
+                          </Text>
+                        </MotiView>
+                      )}
+                    </AnimatePresence>
+                  </TouchableOpacity>
+                </BlurView>
+              </MotiView>
+            ))}
+          </AnimatePresence>
         </Animated.View>
 
-        <View style={styles.controls}>
-          <TouchableOpacity 
-            style={styles.closeButton}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              navigation.goBack();
-            }}
-          >
-            <MaterialIcons name="close" size={24} color="#ffffff" />
-          </TouchableOpacity>
+        <BlurView
+          intensity={30}
+          tint="dark"
+          style={styles.controls}
+        >
+          <View style={styles.controlButtons}>
+            <TouchableOpacity 
+              style={styles.controlButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                navigation.goBack();
+              }}
+            >
+              <MaterialIcons name="close" size={24} color="#ffffff" />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.audioButton}
-            onPress={() => {
-              setAudioEnabled(!audioEnabled);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Object.values(soundObjects).forEach(sound => {
-                audioEnabled ? sound.pauseAsync() : sound.playAsync();
-              });
-            }}
-          >
-            <MaterialIcons
-              name={audioEnabled ? "volume-up" : "volume-off"}
-              size={24}
-              color="#ffffff"
-            />
-          </TouchableOpacity>
-
-          <View style={styles.infoPanel}>
-            <Text style={styles.infoTitle}>{location?.title}</Text>
-            <Text style={styles.infoText}>
-              {activePoint
-                ? activePoint.description
-                : "Point your camera at the location to see historical details"}
-            </Text>
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={() => {
+                setAudioEnabled(!audioEnabled);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Object.values(soundObjects).forEach(sound => {
+                  audioEnabled ? sound.pauseAsync() : sound.playAsync();
+                });
+              }}
+            >
+              <MaterialIcons
+                name={audioEnabled ? "volume-up" : "volume-off"}
+                size={24}
+                color="#ffffff"
+              />
+            </TouchableOpacity>
           </View>
-        </View>
+
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'spring', delay: 300 }}
+          >
+            <BlurView
+              intensity={40}
+              tint="dark"
+              style={styles.infoPanel}
+            >
+              <Text style={styles.infoTitle}>{location?.title}</Text>
+              <Text style={styles.infoText}>
+                {activePoint
+                  ? activePoint.description
+                  : "Point your camera at the location to see historical details"}
+              </Text>
+            </BlurView>
+          </MotiView>
+        </BlurView>
       </Camera>
     </View>
   );
@@ -350,36 +450,35 @@ const styles = StyleSheet.create({
   },
   poiMarker: {
     position: 'absolute',
-    backgroundColor: 'rgba(59, 130, 246, 0.9)',
-    padding: 12,
-    borderRadius: 8,
-    maxWidth: 250,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    maxWidth: 300,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
-  activePoi: {
-    backgroundColor: 'rgba(59, 130, 246, 0.95)',
-    borderWidth: 2,
-    borderColor: '#ffffff',
+  poiContent: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  poiTouchable: {
+    padding: 16,
+  },
+  poiIcon: {
+    marginBottom: 8,
   },
   poiTitle: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     marginBottom: 4,
   },
-  poiContent: {
-    marginTop: 8,
+  poiDetails: {
+    overflow: 'hidden',
   },
   poiDescription: {
-    color: '#ffffff',
+    color: '#e2e8f0',
     fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
   },
   controls: {
     position: 'absolute',
@@ -387,41 +486,39 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
   },
-  closeButton: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  controlButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  controlButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'flex-end',
-  },
-  audioButton: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   infoPanel: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: 12,
-    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   infoTitle: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     marginBottom: 8,
   },
   infoText: {
     color: '#e2e8f0',
     fontSize: 14,
+    lineHeight: 20,
   },
   centerContainer: {
     flex: 1,
@@ -434,18 +531,23 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontSize: 16,
     textAlign: 'center',
+    marginTop: 16,
   },
   errorText: {
     color: '#ef4444',
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 16,
+    marginVertical: 16,
   },
   button: {
-    backgroundColor: '#3b82f6',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 16,
+  },
+  buttonGradient: {
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    alignItems: 'center',
   },
   buttonText: {
     color: '#ffffff',
