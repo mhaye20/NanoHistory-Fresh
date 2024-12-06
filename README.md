@@ -1,6 +1,6 @@
-# NanoHistory
+# TaleTrail
 
-NanoHistory is a React Native mobile application that brings historical locations to life through augmented reality (AR) experiences and AI-powered storytelling. The app allows users to explore nearby historical sites, learn about their significance through an AI guide, and contribute their own stories to the historical narrative.
+TaleTrail is a React Native mobile application that brings historical locations to life through augmented reality (AR) experiences and AI-powered storytelling. The app allows users to explore nearby historical sites, learn about their significance through an AI guide, and contribute their own stories to the historical narrative.
 
 ## Features
 

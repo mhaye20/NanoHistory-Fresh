@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
+import { kawaii } from '../theme/kawaii';
 
 // Import screens
 import HomeScreen from '../screens/HomeScreen';
@@ -17,27 +18,37 @@ const Stack = createNativeStackNavigator();
 
 const screenOptions = {
   headerStyle: {
-    backgroundColor: '#0f172a',
+    backgroundColor: kawaii.pastelPalette.background.light,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
   },
-  headerTintColor: '#fff',
+  headerTintColor: kawaii.pastelPalette.text.primary,
   headerTitleStyle: {
-    fontWeight: '600',
+    fontWeight: kawaii.playfulTypography.weights.bold,
+    fontSize: kawaii.playfulTypography.sizes.large,
+    color: kawaii.pastelPalette.text.primary,
+    fontFamily: kawaii.playfulTypography.fontFamily,
   },
   headerBackTitleVisible: false,
   contentStyle: {
-    backgroundColor: '#0f172a',
+    backgroundColor: kawaii.pastelPalette.background.light,
   },
+  headerShadowVisible: false,
+  headerBlurEffect: 'light',
 };
 
 const AppNavigator = () => {
   return (
     <NavigationContainer>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
           ...screenOptions,
-          animation: 'slide_from_bottom',
+          animation: 'fade_from_bottom',
+          animationDuration: 300,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
         }}
       >
         <Stack.Screen
@@ -51,7 +62,10 @@ const AppNavigator = () => {
           options={{
             title: 'Explore History',
             headerTransparent: true,
-            headerBlurEffect: 'dark',
+            headerBlurEffect: 'light',
+            headerStyle: {
+              backgroundColor: 'transparent',
+            },
           }}
         />
         <Stack.Screen
@@ -60,12 +74,17 @@ const AppNavigator = () => {
           options={({ route }) => ({
             title: route.params?.location?.title || 'Location Details',
             headerTransparent: true,
-            headerBlurEffect: 'dark',
+            headerBlurEffect: 'light',
+            headerStyle: {
+              backgroundColor: 'transparent',
+            },
           })}
         />
         <Stack.Group
           screenOptions={{
             presentation: 'modal',
+            animation: 'slide_from_bottom',
+            animationDuration: 300,
           }}
         >
           <Stack.Screen
@@ -74,8 +93,11 @@ const AppNavigator = () => {
             options={{
               title: 'AR Experience',
               headerTransparent: true,
-              headerBlurEffect: 'dark',
+              headerBlurEffect: 'light',
               presentation: 'fullScreenModal',
+              headerStyle: {
+                backgroundColor: 'transparent',
+              },
             }}
           />
           <Stack.Screen
@@ -84,7 +106,10 @@ const AppNavigator = () => {
             options={{
               title: 'Share Your Story',
               headerTransparent: true,
-              headerBlurEffect: 'dark',
+              headerBlurEffect: 'light',
+              headerStyle: {
+                backgroundColor: 'transparent',
+              },
             }}
           />
           <Stack.Screen
@@ -93,8 +118,11 @@ const AppNavigator = () => {
             options={{
               title: '',
               headerTransparent: true,
-              headerBlurEffect: 'dark',
+              headerBlurEffect: 'light',
               animation: 'slide_from_bottom',
+              headerStyle: {
+                backgroundColor: 'transparent',
+              },
             }}
           />
         </Stack.Group>
@@ -104,7 +132,10 @@ const AppNavigator = () => {
           options={{
             title: 'AI Historical Guide',
             headerTransparent: true,
-            headerBlurEffect: 'dark',
+            headerBlurEffect: 'light',
+            headerStyle: {
+              backgroundColor: 'transparent',
+            },
           }}
         />
         <Stack.Screen
@@ -113,7 +144,10 @@ const AppNavigator = () => {
           options={{
             title: 'Historical Tour Guide',
             headerTransparent: true,
-            headerBlurEffect: 'dark',
+            headerBlurEffect: 'light',
+            headerStyle: {
+              backgroundColor: 'transparent',
+            },
           }}
         />
       </Stack.Navigator>

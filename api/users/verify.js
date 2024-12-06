@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     });
 
     const welcomeHtml = `
-      <h2>Welcome to NanoHistory!</h2>
+      <h2>Welcome to TaleTrail!</h2>
       <p>Your email has been verified successfully. You can now sign in to your account and start exploring historical locations.</p>
       <p>Thank you for joining our community!</p>
     `;
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM,
       to: email,
-      subject: 'Welcome to NanoHistory',
+      subject: 'Welcome to TaleTrail',
       html: welcomeHtml,
     });
 

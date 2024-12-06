@@ -187,7 +187,7 @@ export default async function handler(req) {
         "story": "Detailed narrative about this specific building/site",
         "facts": ["Specific fact about this building/site", "Another specific fact", "A third specific fact"],
         "historicalPeriods": ["Periods relevant to this building/site"],
-        "suggestedActivities": ["Activities related to this specific location"],
+        "suggestedActivities": ["Activities related to this specific location"], 
         "storyTypes": ["type1", "type2"]
       }`;
 

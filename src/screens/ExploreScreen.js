@@ -28,6 +28,7 @@ import { getUserPointsAndLevel, getUserAchievements, POINT_VALUES } from '../ser
 import { supabase } from '../services/supabase';
 import env from '../config/env';
 import { debounce } from 'lodash';
+import { kawaii } from '../theme/kawaii';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HEADER_HEIGHT = Platform.OS === 'ios' ? 70 : 50;
@@ -52,12 +53,10 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
     outputRange: [0.6, 1, 0.6],
   });
 
-  // Format story types for display
   const getDisplayStoryTypes = () => {
     if (!Array.isArray(location.story_types) || location.story_types.length === 0) {
       return 'General History';
     }
-    // Take first 2 story types and format them
     const types = location.story_types.slice(0, 2).map(type => 
       type.charAt(0).toUpperCase() + type.slice(1).replace(/([A-Z])/g, ' $1')
     );
@@ -85,12 +84,12 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
           resizeMode="cover"
         />
         
-        <BlurView intensity={50} tint="dark" style={styles.topLabelOverlay}>
+        <BlurView intensity={50} tint="light" style={styles.topLabelOverlay}>
           <Text style={styles.topLabelText}>{getDisplayStoryTypes()}</Text>
         </BlurView>
 
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
+          colors={['transparent', kawaii.pastelPalette.gradients.pinkLove[0], kawaii.pastelPalette.gradients.pinkLove[1]]}
           style={styles.gradient}
         >
           <View style={styles.cardContent}>
@@ -104,17 +103,19 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
 
             <View style={styles.cardFooter}>
               <View style={styles.locationInfo}>
-                <BlurView intensity={30} tint="dark" style={styles.distanceBadge}>
-                  <MaterialIcons name="place" size={16} color="#fff" />
+                <BlurView intensity={30} tint="light" style={styles.distanceBadge}>
+                  <MaterialIcons name="place" size={16} color={kawaii.pastelPalette.text.primary} />
                   <Text style={styles.distanceText}>
                     {location.distance ? `${(location.distance / 1000).toFixed(1)} km` : '2.5 km'}
                   </Text>
                 </BlurView>
 
                 {location.hasStories && (
-                  <BlurView intensity={30} tint="dark" style={styles.storiesBadge}>
-                    <MaterialIcons name="history-edu" size={16} color="#10b981" />
-                    <Text style={styles.storiesText}>Stories Available</Text>
+                  <BlurView intensity={30} tint="light" style={styles.storiesBadge}>
+                    <MaterialIcons name="history-edu" size={16} color={kawaii.pastelPalette.ui.success} />
+                    <Text style={[styles.storiesText, { color: kawaii.pastelPalette.ui.success }]}>
+                      Stories Available
+                    </Text>
                   </BlurView>
                 )}
               </View>
@@ -126,10 +127,10 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
                     onPress={onARPress}
                   >
                     <LinearGradient
-                      colors={['#10b981', '#059669']}
+                      colors={kawaii.pastelPalette.gradients.mintFresh}
                       style={styles.actionButton}
                     >
-                      <MaterialIcons name="view-in-ar" size={20} color="#fff" />
+                      <MaterialIcons name="view-in-ar" size={20} color={kawaii.pastelPalette.text.primary} />
                       <Text style={styles.pointsText}>+{POINT_VALUES.AR_PHOTO}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -988,26 +989,22 @@ const ExploreScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: kawaii.pastelPalette.background.light,
   },
   header: {
     paddingTop: HEADER_HEIGHT,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingHorizontal: kawaii.gentleSpacing.large,
+    paddingBottom: kawaii.gentleSpacing.large,
+    borderBottomLeftRadius: kawaii.cornerRadius,
+    borderBottomRightRadius: kawaii.cornerRadius,
   },
   levelBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    paddingHorizontal: kawaii.gentleSpacing.large,
+    paddingVertical: kawaii.gentleSpacing.medium,
+    borderRadius: kawaii.cornerRadius,
     borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
-    shadowColor: '#fbbf24',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: 'rgba(255, 151, 193, 0.3)',
+    ...kawaii.softShadow,
   },
   levelInfo: {
     flexDirection: 'row',
@@ -1191,22 +1188,31 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
   },
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    marginHorizontal: SPACING,
+    borderRadius: kawaii.cornerRadius,
+    overflow: 'hidden',
+    backgroundColor: kawaii.pastelPalette.background.light,
+    ...kawaii.cuteShadow,
+  },
   cardContent: {
-    padding: 20,
+    padding: kawaii.gentleSpacing.large,
   },
   cardHeader: {
     marginBottom: 12,
   },
   locationTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 8,
+    fontSize: kawaii.playfulTypography.sizes.xlarge,
+    fontWeight: kawaii.playfulTypography.weights.bold,
+    color: kawaii.pastelPalette.text.primary,
+    marginBottom: kawaii.gentleSpacing.small,
   },
   locationDescription: {
-    fontSize: 16,
-    color: '#e2e8f0',
-    marginBottom: 16,
+    fontSize: kawaii.playfulTypography.sizes.medium,
+    color: kawaii.pastelPalette.text.secondary,
+    marginBottom: kawaii.gentleSpacing.large,
     lineHeight: 24,
   },
   cardFooter: {

@@ -172,7 +172,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
   const showLocationPermissionAlert = () => {
     Alert.alert(
       'Location Access Required',
-      'NanoHistory needs your location to verify historical sites and award points. Please enable location access in Settings.',
+      'TaleTrail needs your location to verify historical sites and award points. Please enable location access in Settings.',
       [
         { 
           text: 'Not Now',

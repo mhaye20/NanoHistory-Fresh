@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     const verificationLink = `nanohistory://auth/callback?token=${authData.user.confirmation_token}&type=signup&email=${email}`;
     
     const emailHtml = `
-      <h2>Welcome to NanoHistory</h2>
+      <h2>Welcome to TaleTrail</h2>
       <p>Thank you for signing up! Please verify your email address by clicking the link below:</p>
       <p><a href="${verificationLink}">Verify Email Address</a></p>
       <p>If you did not create this account, please ignore this email.</p>
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM,
       to: email,
-      subject: 'Verify your NanoHistory account',
+      subject: 'Verify your TaleTrail account',
       html: emailHtml,
     });
 
