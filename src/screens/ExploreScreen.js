@@ -89,7 +89,11 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
         </BlurView>
 
         <LinearGradient
-          colors={['transparent', kawaii.pastelPalette.gradients.pinkLove[0], kawaii.pastelPalette.gradients.pinkLove[1]]}
+          colors={[
+            'transparent',
+            kawaii.pastelPalette.gradients.pinkLove[0],
+            kawaii.pastelPalette.gradients.pinkLove[1]
+          ]}
           style={styles.gradient}
         >
           <View style={styles.cardContent}>
@@ -995,16 +999,23 @@ const styles = StyleSheet.create({
     paddingTop: HEADER_HEIGHT,
     paddingHorizontal: kawaii.gentleSpacing.large,
     paddingBottom: kawaii.gentleSpacing.large,
-    borderBottomLeftRadius: kawaii.cornerRadius,
-    borderBottomRightRadius: kawaii.cornerRadius,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 182, 193, 0.2)',
   },
   levelBanner: {
     paddingHorizontal: kawaii.gentleSpacing.large,
     paddingVertical: kawaii.gentleSpacing.medium,
-    borderRadius: kawaii.cornerRadius,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 151, 193, 0.3)',
-    ...kawaii.softShadow,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 182, 193, 0.3)',
+    backgroundColor: 'rgba(255, 182, 193, 0.05)',
+    shadowColor: '#FF69B4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   levelInfo: {
     flexDirection: 'row',
@@ -1065,18 +1076,19 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
+    paddingHorizontal: kawaii.gentleSpacing.large,
+    paddingVertical: kawaii.gentleSpacing.medium,
+    borderRadius: kawaii.cornerRadius,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: kawaii.pastelPalette.ui.cardBorder,
+    backgroundColor: 'rgba(255, 182, 193, 0.05)',
+    ...kawaii.softShadow,
   },
   searchInput: {
     flex: 1,
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 12,
-    marginRight: 8,
+    color: kawaii.pastelPalette.text.primary,
+    fontSize: kawaii.playfulTypography.sizes.medium,
+    marginLeft: kawaii.gentleSpacing.medium,
   },
   clearButton: {
     padding: 4,
@@ -1144,16 +1156,19 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     flex: 1,
-    borderRadius: 20,
+    borderRadius: kawaii.cornerRadius,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: kawaii.pastelPalette.ui.cardBorder,
+    ...kawaii.softShadow,
   },
   filterButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 8,
+    paddingVertical: kawaii.gentleSpacing.medium,
+    paddingHorizontal: kawaii.gentleSpacing.large,
+    gap: kawaii.gentleSpacing.small,
   },
   filterButtonLabel: {
     color: 'rgba(255, 255, 255, 0.6)',
@@ -1384,20 +1399,22 @@ const styles = StyleSheet.create({
   achievementContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 20,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
+    padding: kawaii.gentleSpacing.large,
+    borderRadius: kawaii.cornerRadius,
+    gap: kawaii.gentleSpacing.medium,
+    borderWidth: 1.5,
+    borderColor: kawaii.pastelPalette.ui.cardBorder,
+    backgroundColor: 'rgba(255, 182, 193, 0.05)',
+    ...kawaii.cuteShadow,
   },
   achievementTitle: {
-    color: '#fbbf24',
-    fontSize: 16,
-    fontWeight: '600',
+    color: kawaii.pastelPalette.text.accent,
+    fontSize: kawaii.playfulTypography.sizes.large,
+    fontWeight: kawaii.playfulTypography.weights.bold,
   },
   achievementDesc: {
-    color: '#e2e8f0',
-    fontSize: 14,
+    color: kawaii.pastelPalette.text.secondary,
+    fontSize: kawaii.playfulTypography.sizes.medium,
   },
   achievementPoints: {
     color: '#fbbf24',
