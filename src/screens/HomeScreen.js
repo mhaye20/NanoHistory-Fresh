@@ -3,23 +3,22 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  Animated,
   Dimensions,
-  Platform,
+  Animated,
+  ScrollView as RNScrollView,
+  StyleSheet,
   Image,
-  Easing,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
-import { BlurView } from 'expo-blur';
 import { MaterialIcons } from '@expo/vector-icons';
 import { kawaii } from '../theme/kawaii';
 import { MotiView } from 'moti';
-import Carousel from 'react-native-reanimated-carousel';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { BlurView } from 'expo-blur';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -248,36 +247,151 @@ const DAILY_HISTORY_FACTS = [
   },
 ];
 
-const HistoryFactCard = ({ fact, icon, color }) => (
-  <MotiView
-    from={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ type: 'timing', duration: 500 }}
-    style={styles.historyFactCard}
-  >
-    <LinearGradient
-      colors={[color, color + '80']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.historyFactCardGradient}
+const HistoryFactCard = ({ fact, icon, color }) => {
+  const handlePress = useCallback(() => {
+    try {
+      console.log('History Fact Pressed:', fact);
+      Alert.alert('History Fact', fact, [{ text: 'Close' }]);
+    } catch (error) {
+      console.error('Error handling history fact press:', error);
+    }
+  }, [fact]);
+
+  return (
+    <TouchableOpacity 
+      activeOpacity={0.8}
+      onPress={handlePress}
     >
-      <MaterialIcons 
-        name={icon} 
-        size={32} 
-        color={kawaii.pastelPalette.text.primary} 
-        style={styles.historyFactIcon}
-      />
-      <Text style={styles.historyFactText}>{fact}</Text>
-    </LinearGradient>
-  </MotiView>
-);
+      <MotiView
+        from={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'timing', duration: 500 }}
+        style={styles.historyFactCard}
+      >
+        <LinearGradient
+          colors={[color, color + '80']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.historyFactCardGradient}
+        >
+          <MaterialIcons 
+            name={icon} 
+            size={32} 
+            color={kawaii.pastelPalette.text.primary} 
+            style={styles.historyFactIcon}
+          />
+          <Text style={styles.historyFactText}>{fact}</Text>
+        </LinearGradient>
+      </MotiView>
+    </TouchableOpacity>
+  );
+};
+
+const HistoryFactCarousel = ({ facts }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const nextIndex = (currentIndex + 1) % facts.length;
+      flatListRef.current?.scrollToIndex({ 
+        index: nextIndex, 
+        animated: true,
+        viewPosition: 0.5 
+      });
+      setCurrentIndex(nextIndex);
+    }, 5000); // Change fact every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [currentIndex, facts.length]);
+
+  const renderPaginationDots = () => {
+    return facts.map((_, index) => {
+      const inputRange = [
+        (index - 1) * SCREEN_WIDTH,
+        index * SCREEN_WIDTH,
+        (index + 1) * SCREEN_WIDTH
+      ];
+      const opacity = scrollX.interpolate({
+        inputRange,
+        outputRange: [0.3, 1, 0.3],
+        extrapolate: 'clamp'
+      });
+
+      return (
+        <Animated.View
+          key={index}
+          style={[
+            styles.historyFactDot,
+            { 
+              opacity,
+              backgroundColor: index === currentIndex 
+                ? kawaii.pastelPalette.text.primary 
+                : kawaii.pastelPalette.text.secondary
+            }
+          ]}
+        />
+      );
+    });
+  };
+
+  return (
+    <View style={styles.historyFactCarouselContainer}>
+      <Text style={styles.historyFactTitle}>Daily History Fact</Text>
+      <View style={styles.historyFactSwiperWrapper}>
+        <Animated.FlatList
+          ref={flatListRef}
+          data={facts}
+          horizontal
+          pagingEnabled
+          snapToAlignment="center"
+          snapToInterval={SCREEN_WIDTH * 0.9}
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.historyFactListContainer}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item, index }) => (
+            <View 
+              style={[
+                styles.historyFactSlide, 
+                { 
+                  opacity: index === currentIndex ? 1 : 0.1,
+                  width: SCREEN_WIDTH * 0.9 
+                }
+              ]}
+            >
+              <HistoryFactCard 
+                fact={item.fact} 
+                icon={item.icon} 
+                color={item.color} 
+              />
+            </View>
+          )}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
+          getItemLayout={(data, index) => ({
+            length: SCREEN_WIDTH * 0.9,
+            offset: SCREEN_WIDTH * 0.9 * index,
+            index,
+          })}
+        />
+        <View style={styles.historyFactPagination}>
+          {renderPaginationDots()}
+        </View>
+      </View>
+    </View>
+  );
+};
 
 const HomeScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const mascotBounceAnim = useRef(new Animated.Value(0)).current;
   const mascotWobbleAnim = useRef(new Animated.Value(0)).current;
-  const carouselRef = useRef(null);
   const [currentFactIndex, setCurrentFactIndex] = useState(0);
 
   useEffect(() => {
@@ -449,38 +563,7 @@ const HomeScreen = ({ navigation }) => {
                 </View>
               </View>
 
-              <View style={styles.historyFactCarouselContainer}>
-                <Text style={styles.historyFactTitle}>Daily History Fact</Text>
-                <Carousel
-                  ref={carouselRef}
-                  width={SCREEN_WIDTH * 0.9}
-                  height={SCREEN_HEIGHT * 0.2}
-                  data={DAILY_HISTORY_FACTS}
-                  renderItem={({ item }) => (
-                    <HistoryFactCard 
-                      fact={item.fact} 
-                      icon={item.icon} 
-                      color={item.color} 
-                    />
-                  )}
-                  onSnapToItem={(index) => setCurrentFactIndex(index)}
-                  autoPlay={true}
-                  autoPlayInterval={5000}
-                  scrollAnimationDuration={1000}
-                />
-                {/* Pagination Dots */}
-                <View style={styles.carouselPaginationContainer}>
-                  {DAILY_HISTORY_FACTS.map((_, index) => (
-                    <View 
-                      key={index} 
-                      style={[
-                        styles.carouselPaginationDot, 
-                        index === currentFactIndex && styles.carouselPaginationDotActive
-                      ]} 
-                    />
-                  ))}
-                </View>
-              </View>
+              <HistoryFactCarousel facts={DAILY_HISTORY_FACTS} />
 
               <BlurView 
                 intensity={0} 
@@ -670,8 +753,26 @@ const styles = StyleSheet.create({
   },
   historyFactCarouselContainer: {
     width: '100%',
-    paddingHorizontal: kawaii.gentleSpacing.medium,
-    marginBottom: kawaii.gentleSpacing.xlarge,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: kawaii.gentleSpacing.medium,
+  },
+  historyFactSwiperWrapper: {
+    width: SCREEN_WIDTH * 0.9,
+    height: Math.round(SCREEN_HEIGHT * 0.15),
+    borderRadius: kawaii.cornerRadius,
+    overflow: 'hidden',
+  },
+  historyFactSlide: {
+    width: SCREEN_WIDTH * 0.9,
+    height: Math.round(SCREEN_HEIGHT * 0.15),
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: kawaii.gentleSpacing.small,
+  },
+  historyFactListContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   historyFactTitle: {
     fontSize: kawaii.playfulTypography.sizes.medium,
@@ -699,21 +800,21 @@ const styles = StyleSheet.create({
     color: kawaii.pastelPalette.text.primary,
     textAlign: 'center',
   },
-  carouselPaginationContainer: {
+  historyFactPagination: {
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: kawaii.gentleSpacing.small,
   },
-  carouselPaginationDot: {
+  historyFactDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: kawaii.pastelPalette.text.primary + '20',
     marginHorizontal: 4,
-  },
-  carouselPaginationDotActive: {
-    backgroundColor: kawaii.pastelPalette.text.primary,
+    backgroundColor: kawaii.pastelPalette.text.secondary,
   },
 });
 
