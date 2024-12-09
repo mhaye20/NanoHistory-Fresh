@@ -8,6 +8,7 @@ import {
   Dimensions,
   Platform,
   Image,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -306,111 +307,117 @@ const HomeScreen = ({ navigation }) => {
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        
-        <BackgroundPattern />
+          style={styles.gradient}
+        >
+          <BackgroundPattern />
 
-        <StatusBar style="dark" />
-        <SafeAreaView style={styles.safeArea}>
-          <Animated.View
-            style={[
-              styles.content,
-              {
-                opacity: fadeAnim,
-                transform: [{ scale: scaleAnim }],
-              },
-            ]}
-          >
-            <View style={styles.mascotSection}>
-              <BlurView intensity={40} tint="light" style={styles.mascotBlur}>
-                <Animated.View
-                  style={[
-                    styles.mascotContainer,
-                    {
-                      transform: [
-                        { translateY: mascotBounceAnim },
-                        { rotate: mascotWobbleAnim.interpolate({
-                          inputRange: [-1, 1],
-                          outputRange: ['-15deg', '15deg']
-                        })},
-                      ],
-                    },
-                  ]}
-                >
-                  <Image
-                    source={require('../assets/mascots/mascot.png')}
-                    style={styles.mascot}
-                    resizeMode="contain"
-                  />
-                </Animated.View>
-                <Text style={styles.title}>TaleTrail</Text>
-                <Text style={styles.subtitle}>Where Every Place Has a Story</Text>
-              </BlurView>
-            </View>
-
-            <View style={styles.buttonContainer}>
-              <KawaiiButton
-                style={styles.mainButton}
-                gradientColors={kawaii.pastelPalette.gradients.pinkLove}
-                icon="explore"
-                label="Discover Stories"
-                size="large"
-                onPress={() => handleNavigateToExplore('button')}
-              />
-
-              <View style={styles.secondaryButtonsContainer}>
-                <KawaiiButton
-                  style={[styles.secondaryButton, { marginRight: 8 }]}
-                  gradientColors={kawaii.pastelPalette.gradients.purpleMist}
-                  icon="psychology"
-                  label="History Guide"
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    navigation.navigate('AIGuide');
-                  }}
-                />
-
-                <KawaiiButton
-                  style={[styles.secondaryButton, { marginRight: 8 }]}
-                  gradientColors={kawaii.pastelPalette.gradients.mintFresh}
-                  icon="add-photo-alternate"
-                  label="Share Story"
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    navigation.navigate('CreateStory');
-                  }}
-                />
-
-                <KawaiiButton
-                  style={styles.secondaryButton}
-                  gradientColors={kawaii.pastelPalette.gradients.peachSunset}
-                  icon="map"
-                  label="Tour Guide"
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    navigation.navigate('TourGuide');
-                  }}
-                />
+          <StatusBar style="dark" />
+          <SafeAreaView style={styles.safeArea}>
+            <Animated.View
+              style={[
+                styles.content,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ scale: scaleAnim }],
+                },
+              ]}
+            >
+              <View style={styles.mascotSection}>
+                <BlurView intensity={40} tint="light" style={styles.mascotBlur}>
+                  <Animated.View
+                    style={[
+                      styles.mascotContainer,
+                      {
+                        transform: [
+                          { translateY: mascotBounceAnim },
+                          { rotate: mascotWobbleAnim.interpolate({
+                            inputRange: [-1, 1],
+                            outputRange: ['-15deg', '15deg'],
+                          })},
+                        ],
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={require('../assets/mascots/mascot.png')}
+                      style={styles.mascot}
+                      resizeMode="contain"
+                    />
+                  </Animated.View>
+                  <Text style={styles.title}>TaleTrail</Text>
+                  <Text style={styles.subtitle}>Where Every Place Has a Story</Text>
+                </BlurView>
               </View>
-            </View>
 
-            <BlurView intensity={40} tint="light" style={styles.footer}>
-              <LinearGradient
-                colors={kawaii.pastelPalette.gradients.skyDream}
-                style={styles.footerGradient}
-              >
-                <MaterialIcons
-                  name="swipe-up"
-                  size={24}
-                  color={kawaii.pastelPalette.text.primary}
-                  style={styles.footerIcon}
+              <View style={styles.buttonContainer}>
+                <KawaiiButton
+                  style={styles.mainButton}
+                  gradientColors={kawaii.pastelPalette.gradients.oceanBreeze}
+                  icon="explore"
+                  label="Discover Stories"
+                  size="large"
+                  onPress={() => handleNavigateToExplore('button')}
                 />
-                <Text style={styles.footerText}>Swipe up to explore history around you</Text>
-              </LinearGradient>
-            </BlurView>
-          </Animated.View>
-        </SafeAreaView>
+
+                <View style={styles.secondaryButtonsContainer}>
+                  <KawaiiButton
+                    style={[styles.secondaryButton, { marginRight: 8 }]}
+                    gradientColors={kawaii.pastelPalette.gradients.greenWhisper}
+                    icon="psychology"
+                    label="History Guide"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      navigation.navigate('AIGuide');
+                    }}
+                  />
+
+                  <KawaiiButton
+                    style={[styles.secondaryButton, { marginRight: 8 }]}
+                    gradientColors={kawaii.pastelPalette.gradients.mintFresh}
+                    icon="add-photo-alternate"
+                    label="Share Story"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      navigation.navigate('CreateStory');
+                    }}
+                  />
+
+                  <KawaiiButton
+                    style={styles.secondaryButton}
+                    gradientColors={kawaii.pastelPalette.gradients.peachSunset}
+                    icon="map"
+                    label="Tour Guide"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      navigation.navigate('TourGuide');
+                    }}
+                  />
+                </View>
+              </View>
+
+              <BlurView 
+                intensity={0} 
+                tint="light" 
+                style={styles.footer}
+              >
+                <LinearGradient
+                  colors={['transparent', 'transparent']}
+                  style={styles.footerGradient}
+                >
+                  <MaterialIcons
+                    name="swipe-up"
+                    size={16}
+                    color={kawaii.pastelPalette.text.primary}
+                    style={styles.footerIcon}
+                  />
+                  <Text style={styles.footerText}>
+                    Swipe up to explore history around you
+                  </Text>
+                </LinearGradient>
+              </BlurView>
+            </Animated.View>
+          </SafeAreaView>
+        </LinearGradient>
       </View>
     </GestureDetector>
   );
@@ -494,7 +501,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   kawaiiButton: {
-    borderRadius: kawaii.cornerRadius * 2,
     overflow: 'hidden',
     ...kawaii.cuteShadow,
   },
@@ -502,7 +508,6 @@ const styles = StyleSheet.create({
     borderRadius: kawaii.cornerRadius * 2.5,
   },
   kawaiiButtonGradient: {
-    borderRadius: kawaii.cornerRadius * 2,
     padding: 2,
   },
   kawaiiButtonGradientLarge: {
@@ -542,26 +547,39 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   footer: {
-    borderRadius: kawaii.cornerRadius * 2,
-    overflow: 'hidden',
-    marginBottom: Platform.OS === 'ios' ? 40 : 20,
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   footerGradient: {
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: kawaii.gentleSpacing.medium,
-    paddingHorizontal: kawaii.gentleSpacing.large,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
   },
   footerIcon: {
-    marginRight: kawaii.gentleSpacing.small,
+    width: 16,
+    height: 16,
+    tintColor: kawaii.pastelPalette.text.primary,
+    opacity: 0.2,
+    marginRight: 4,
   },
   footerText: {
     color: kawaii.pastelPalette.text.primary,
-    fontSize: kawaii.playfulTypography.sizes.medium,
-    fontWeight: kawaii.playfulTypography.weights.medium,
+    fontSize: 16,
+    fontWeight: '300',
     letterSpacing: 0.5,
+    opacity: 0.3,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
   },
 });
 

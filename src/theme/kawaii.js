@@ -1,55 +1,104 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  // Vibrant, kawaii-style colors inspired by Line and Kakao
-  primary: '#FF97C1', // Softer pink
-  secondary: '#87E0C5', // Minty fresh
-  accent: '#FFD93D', // Cheerful yellow
-  tertiary: '#B4A7FF', // Soft purple
+  // Nature-inspired kawaii colors
+  primary: '#4ECDC4', // Soft teal
+  secondary: '#45B7D1', // Gentle blue
+  accent: '#FFD93D', // Cheerful yellow (keeping this)
+  tertiary: '#A8DADC', // Light blue
   
-  // Playful background colors
+  // Soft, calming background colors
   background: {
-    light: '#FFF5F9', // Super soft pink
-    dark: '#F9F0FF', // Soft purple
-    mint: '#F0FFF4', // Soft mint
-    peach: '#FFF0EA', // Soft peach
+    light: '#F1FAEE', // Soft mint green
+    dark: '#E9F5F9', // Pale blue
+    mint: '#E8F5E9', // Light sage
+    peach: '#E6F3FF', // Soft sky blue
   },
   
   // Text colors
   text: {
-    primary: '#575366', // Soft purple-grey
-    secondary: '#8A8499', // Light purple-grey
-    accent: '#FF97C1', // Pink accent
-    highlight: '#FFD93D', // Yellow highlight
+    primary: '#2C3E50', // Deep blue-grey
+    secondary: '#34495E', // Soft grey-blue
+    accent: '#4ECDC4', // Teal accent
+    highlight: '#FFD93D', // Yellow highlight (keeping this)
   },
   
   // Kawaii UI element colors
   ui: {
     card: '#FFFFFF',
-    cardBorder: '#FFE2EE', // Softer pink border
-    button: '#FF97C1', // Main pink
-    buttonSecondary: '#87E0C5', // Mint button
+    cardBorder: '#A8DADC', // Light blue border
+    button: '#4ECDC4', // Teal button
+    buttonSecondary: '#45B7D1', // Soft blue button
     buttonText: '#FFFFFF',
-    input: '#FFF9FB', // Super soft pink input
-    inputBorder: '#FFE2EE',
-    success: '#A6E4C0', // Soft green
-    error: '#FFB5B5', // Soft red
+    input: '#F1FAEE', // Soft mint input
+    inputBorder: '#A8DADC',
+    success: '#2ECC71', // Bright green
+    error: '#E74C3C', // Soft red
   },
   
-  // Expanded pastel gradients
+  // Expanded soft gradients
   gradients: {
-    pinkLove: ['#FFE2EE', '#FF97C1'],
-    mintFresh: ['#E0FFF4', '#87E0C5'],
-    skyDream: ['#F7FBFE', '#B4E7FF'],
-    purpleMist: ['#F5F0FF', '#B4A7FF'],
-    peachSunset: ['#FFE8D6', '#FFBEA3'],
+    oceanBreeze: ['#E6F3FF', '#4ECDC4'],
+    skyDream: ['#F1FAEE', '#45B7D1'],
+    greenWhisper: ['#E8F5E9', '#2ECC71'],
+    sunsetGlow: ['#FFE8D6', '#FFD93D'],
+    serenity: ['#E9F5F9', '#A8DADC'],
+    pinkLove: ['#E6F3FF', '#4ECDC4'], // Replaced pink with teal
+    purpleMist: ['#F1FAEE', '#45B7D1'], // Replaced purple with blue
+    mintFresh: ['#E8F5E9', '#2ECC71'],
+    peachSunset: ['#FFE8D6', '#FFD93D'],
+  }
+};
+
+export const pastelPalette = {
+  primary: '#4ECDC4',
+  secondary: '#45B7D1',
+  accent: '#FFD93D',
+  tertiary: '#A8DADC',
+  
+  background: {
+    light: '#F1FAEE',
+    dark: '#E9F5F9',
+    mint: '#E8F5E9',
+    peach: '#E6F3FF',
+  },
+  
+  text: {
+    primary: '#2C3E50',
+    secondary: '#34495E',
+    accent: '#4ECDC4',
+    highlight: '#FFD93D',
+  },
+  
+  ui: {
+    card: '#FFFFFF',
+    cardBorder: '#A8DADC',
+    button: '#4ECDC4',
+    buttonSecondary: '#45B7D1',
+    buttonText: '#FFFFFF',
+    input: '#F1FAEE',
+    inputBorder: '#A8DADC',
+    success: '#2ECC71',
+    error: '#E74C3C',
+  },
+  
+  gradients: {
+    oceanBreeze: ['#E6F3FF', '#4ECDC4'],
+    skyDream: ['#F1FAEE', '#45B7D1'],
+    greenWhisper: ['#E8F5E9', '#2ECC71'],
+    sunsetGlow: ['#FFE8D6', '#FFD93D'],
+    serenity: ['#E9F5F9', '#A8DADC'],
+    pinkLove: ['#E6F3FF', '#4ECDC4'],
+    purpleMist: ['#F1FAEE', '#45B7D1'],
+    mintFresh: ['#E8F5E9', '#2ECC71'],
+    peachSunset: ['#FFE8D6', '#FFD93D'],
   }
 };
 
 export const typography = {
   fontFamily: Platform.select({
-    ios: 'Hiragino Sans',
-    android: 'Noto Sans JP',
+    ios: 'Kawaii-Desu', // Custom kawaii font
+    android: 'Cute-Sans',
     default: 'Arial'
   }),
   sizes: {
@@ -59,6 +108,7 @@ export const typography = {
     large: 20,
     xlarge: 24,
     xxlarge: 32,
+    kawaii: 36, // Extra cute size
   },
   weights: {
     light: '300',
@@ -66,6 +116,7 @@ export const typography = {
     medium: '500',
     bold: '600',
     heavy: '700',
+    kawaii: '500', // Soft, playful weight
   }
 };
 
@@ -99,63 +150,114 @@ export const shadows = {
     shadowColor: '#FFB5D3',
     shadowOffset: {
       width: 0,
-      height: 3,
+      height: 2,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cute: {
     shadowColor: '#FF97C1',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 3,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.20,
+    shadowRadius: 6,
+    elevation: 3,
   },
   floating: {
     shadowColor: '#B4A7FF',
     shadowOffset: {
       width: 0,
-      height: 6,
+      height: 5,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  dreamy: {
+    shadowColor: '#FF97C1',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    backgroundColor: 'rgba(255, 151, 193, 0.05)',
+  },
+  pastel: {
+    shadowColor: '#87E0C5',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 3,
+    backgroundColor: 'rgba(135, 224, 197, 0.03)',
   }
 };
 
 export const animations = {
   bounce: {
-    duration: 600,
-    tension: 35,
-    friction: 3.5,
+    duration: 400, // Slightly faster
+    tension: 40,   // More playful
+    friction: 3,   // More bouncy
     useNativeDriver: true,
+    type: 'spring',
+    damping: 2.5,  // More exaggerated
+    stiffness: 350,
   },
   pop: {
-    duration: 250,
-    toValue: 1.15,
+    duration: 200, // Quicker pop
+    toValue: 1.2,  // More pronounced scale
     useNativeDriver: true,
+    type: 'spring',
+    damping: 1.5,  // More dramatic
+    stiffness: 600,
   },
   wobble: {
     duration: 800,
     tension: 20,
     friction: 3,
     useNativeDriver: true,
+    type: 'spring',
+    damping: 4,
+    stiffness: 200,
   },
   float: {
     duration: 1500,
     direction: 'alternate',
     iterations: -1,
     useNativeDriver: true,
+    type: 'timing',
+    easing: 'easeInOutQuad',
   },
   jelly: {
     duration: 400,
     tension: 100,
     friction: 5,
     useNativeDriver: true,
+    type: 'spring',
+    damping: 1,
+    stiffness: 800,
+  },
+  wiggle: {
+    duration: 300,
+    useNativeDriver: true,
+    type: 'spring',
+    damping: 2,
+    stiffness: 600,
+  },
+  heartBeat: {
+    duration: 500,
+    useNativeDriver: true,
+    type: 'spring',
+    damping: 1,
+    stiffness: 500,
+    iterations: -1,
   }
 };
 
@@ -168,9 +270,9 @@ export const icons = {
     xlarge: 48,
   },
   colors: {
-    primary: '#FF97C1',
-    secondary: '#87E0C5',
-    tertiary: '#B4A7FF',
+    primary: '#4ECDC4',
+    secondary: '#45B7D1',
+    tertiary: '#A8DADC',
     white: '#FFFFFF',
   }
 };
@@ -232,7 +334,7 @@ export const kawaii = {
   softShadow: shadows.soft,
   cuteShadow: shadows.cute,
   floatingShadow: shadows.floating,
-  pastelPalette: colors,
+  pastelPalette: pastelPalette,
   playfulTypography: typography,
   gentleSpacing: spacing,
   bouncyAnimations: animations,
