@@ -82,12 +82,13 @@ export const pastelPalette = {
   
   gradients: {
     oceanBreeze: ['#E6F3FF', '#4ECDC4'],
-    skyDream: ['#D1F2E1', '#45B7D1'],
-    greenWhisper: ['#C8EFD4', '#2ECC71'],
+    skyDream: ['#F1FAEE', '#45B7D1'],
+    greenWhisper: ['#E8F5E9', '#2ECC71'],
     sunsetGlow: ['#FFE8D6', '#FFD93D'],
-    serenity: ['#F0F8FF', '#87E0C5'],
+    serenity: ['#E9F5F9', '#A8DADC'],
     mintFresh: ['#C8EFD4', '#2ECC71'],
     peachSunset: ['#FFF0E6', '#FFD93D'],
+    lavenderDream: ['#F0E6FF', '#8A4FFF']
   }
 };
 

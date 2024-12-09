@@ -91,8 +91,8 @@ const LocationCard = ({ location, onPress, onARPress, index, scrollX }) => {
         <LinearGradient
           colors={[
             'transparent',
-            kawaii.pastelPalette.gradients.pinkLove[0],
-            kawaii.pastelPalette.gradients.pinkLove[1]
+            kawaii.pastelPalette.gradients.serenity[0],
+            kawaii.pastelPalette.gradients.serenity[1]
           ]}
           style={styles.gradient}
         >

@@ -352,7 +352,7 @@ const HomeScreen = ({ navigation }) => {
               <View style={styles.buttonContainer}>
                 <KawaiiButton
                   style={styles.mainButton}
-                  gradientColors={kawaii.pastelPalette.gradients.oceanBreeze}
+                  gradientColors={kawaii.pastelPalette.gradients.skyDream}
                   icon="explore"
                   label="Discover Stories"
                   size="large"
@@ -362,7 +362,7 @@ const HomeScreen = ({ navigation }) => {
                 <View style={styles.secondaryButtonsContainer}>
                   <KawaiiButton
                     style={[styles.secondaryButton, { marginRight: 8 }]}
-                    gradientColors={kawaii.pastelPalette.gradients.greenWhisper}
+                    gradientColors={kawaii.pastelPalette.gradients.mintFresh}
                     icon="psychology"
                     label="History Guide"
                     onPress={() => {
@@ -384,7 +384,7 @@ const HomeScreen = ({ navigation }) => {
 
                   <KawaiiButton
                     style={styles.secondaryButton}
-                    gradientColors={kawaii.pastelPalette.gradients.skyDream}
+                    gradientColors={kawaii.pastelPalette.gradients.lavenderDream}
                     icon="map"
                     label="Tour Guide"
                     onPress={() => {
