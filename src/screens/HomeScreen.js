@@ -373,7 +373,7 @@ const HomeScreen = ({ navigation }) => {
 
                   <KawaiiButton
                     style={[styles.secondaryButton, { marginRight: 8 }]}
-                    gradientColors={kawaii.pastelPalette.gradients.mintFresh}
+                    gradientColors={kawaii.pastelPalette.gradients.peachSunset}
                     icon="add-photo-alternate"
                     label="Share Story"
                     onPress={() => {
@@ -384,7 +384,7 @@ const HomeScreen = ({ navigation }) => {
 
                   <KawaiiButton
                     style={styles.secondaryButton}
-                    gradientColors={kawaii.pastelPalette.gradients.peachSunset}
+                    gradientColors={kawaii.pastelPalette.gradients.skyDream}
                     icon="map"
                     label="Tour Guide"
                     onPress={() => {

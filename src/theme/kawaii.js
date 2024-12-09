@@ -4,34 +4,34 @@ export const colors = {
   // Nature-inspired kawaii colors
   primary: '#4ECDC4', // Soft teal
   secondary: '#45B7D1', // Gentle blue
-  accent: '#FFD93D', // Cheerful yellow (keeping this)
+  accent: '#FFD93D', // Cheerful yellow
   tertiary: '#A8DADC', // Light blue
   
   // Soft, calming background colors
   background: {
-    light: '#F1FAEE', // Soft mint green
-    dark: '#E9F5F9', // Pale blue
-    mint: '#E8F5E9', // Light sage
-    peach: '#E6F3FF', // Soft sky blue
+    light: '#E6F3FF', // Soft sky blue
+    dark: '#D1F2E1', // Soft sage green
+    mint: '#C8EFD4', // Light mint
+    peach: '#FFF0E6', // Soft peach
   },
   
   // Text colors
   text: {
     primary: '#2C3E50', // Deep blue-grey
     secondary: '#34495E', // Soft grey-blue
-    accent: '#4ECDC4', // Teal accent
-    highlight: '#FFD93D', // Yellow highlight (keeping this)
+    accent: '#2ECC71', // Fresh green accent
+    highlight: '#FFD93D', // Yellow highlight
   },
   
   // Kawaii UI element colors
   ui: {
     card: '#FFFFFF',
-    cardBorder: '#A8DADC', // Light blue border
+    cardBorder: '#87E0C5', // Soft mint border
     button: '#4ECDC4', // Teal button
     buttonSecondary: '#45B7D1', // Soft blue button
     buttonText: '#FFFFFF',
-    input: '#F1FAEE', // Soft mint input
-    inputBorder: '#A8DADC',
+    input: '#F0F8FF', // Alice Blue input
+    inputBorder: '#87E0C5',
     success: '#2ECC71', // Bright green
     error: '#E74C3C', // Soft red
   },
@@ -39,14 +39,12 @@ export const colors = {
   // Expanded soft gradients
   gradients: {
     oceanBreeze: ['#E6F3FF', '#4ECDC4'],
-    skyDream: ['#F1FAEE', '#45B7D1'],
-    greenWhisper: ['#E8F5E9', '#2ECC71'],
+    skyDream: ['#D1F2E1', '#45B7D1'],
+    greenWhisper: ['#C8EFD4', '#2ECC71'],
     sunsetGlow: ['#FFE8D6', '#FFD93D'],
-    serenity: ['#E9F5F9', '#A8DADC'],
-    pinkLove: ['#E6F3FF', '#4ECDC4'], // Replaced pink with teal
-    purpleMist: ['#F1FAEE', '#45B7D1'], // Replaced purple with blue
-    mintFresh: ['#E8F5E9', '#2ECC71'],
-    peachSunset: ['#FFE8D6', '#FFD93D'],
+    serenity: ['#F0F8FF', '#87E0C5'],
+    mintFresh: ['#C8EFD4', '#2ECC71'],
+    peachSunset: ['#FFF0E6', '#FFD93D'],
   }
 };
 
@@ -54,44 +52,42 @@ export const pastelPalette = {
   primary: '#4ECDC4',
   secondary: '#45B7D1',
   accent: '#FFD93D',
-  tertiary: '#A8DADC',
+  tertiary: '#87E0C5',
   
   background: {
-    light: '#F1FAEE',
-    dark: '#E9F5F9',
-    mint: '#E8F5E9',
-    peach: '#E6F3FF',
+    light: '#E6F3FF',
+    dark: '#D1F2E1',
+    mint: '#C8EFD4',
+    peach: '#FFF0E6',
   },
   
   text: {
     primary: '#2C3E50',
     secondary: '#34495E',
-    accent: '#4ECDC4',
+    accent: '#2ECC71',
     highlight: '#FFD93D',
   },
   
   ui: {
     card: '#FFFFFF',
-    cardBorder: '#A8DADC',
+    cardBorder: '#87E0C5',
     button: '#4ECDC4',
     buttonSecondary: '#45B7D1',
     buttonText: '#FFFFFF',
-    input: '#F1FAEE',
-    inputBorder: '#A8DADC',
+    input: '#F0F8FF',
+    inputBorder: '#87E0C5',
     success: '#2ECC71',
     error: '#E74C3C',
   },
   
   gradients: {
     oceanBreeze: ['#E6F3FF', '#4ECDC4'],
-    skyDream: ['#F1FAEE', '#45B7D1'],
-    greenWhisper: ['#E8F5E9', '#2ECC71'],
+    skyDream: ['#D1F2E1', '#45B7D1'],
+    greenWhisper: ['#C8EFD4', '#2ECC71'],
     sunsetGlow: ['#FFE8D6', '#FFD93D'],
-    serenity: ['#E9F5F9', '#A8DADC'],
-    pinkLove: ['#E6F3FF', '#4ECDC4'],
-    purpleMist: ['#F1FAEE', '#45B7D1'],
-    mintFresh: ['#E8F5E9', '#2ECC71'],
-    peachSunset: ['#FFE8D6', '#FFD93D'],
+    serenity: ['#F0F8FF', '#87E0C5'],
+    mintFresh: ['#C8EFD4', '#2ECC71'],
+    peachSunset: ['#FFF0E6', '#FFD93D'],
   }
 };
 
@@ -272,7 +268,7 @@ export const icons = {
   colors: {
     primary: '#4ECDC4',
     secondary: '#45B7D1',
-    tertiary: '#A8DADC',
+    tertiary: '#87E0C5',
     white: '#FFFFFF',
   }
 };
