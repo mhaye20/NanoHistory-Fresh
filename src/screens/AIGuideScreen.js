@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getAIResponse, generateVoice } from '../services/ai';
 import * as Location from 'expo-location';
+import { kawaii } from '../theme/kawaii';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -65,7 +66,6 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
     <Animated.View style={[
       styles.messageBubble,
       message.isUser ? styles.userBubble : styles.aiBubble,
-      colorScheme === 'dark' && (message.isUser ? styles.userBubbleDark : styles.aiBubbleDark),
       { opacity: fadeAnim }
     ]}>
       {!message.isUser && (
@@ -74,15 +74,12 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
             source={require('../../assets/icon.png')}
             style={styles.aiAvatar}
           />
-          <Text style={[
-            styles.aiName,
-            colorScheme === 'dark' && styles.aiNameDark
-          ]}>
+          <Text style={styles.aiName}>
             History Guide
           </Text>
         </View>
       )}
-      
+
       <TouchableOpacity
         onPress={() => {
           setIsExpanded(!isExpanded);
@@ -93,7 +90,6 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
         <Text style={[
           styles.messageText,
           message.isUser ? styles.userText : styles.aiText,
-          colorScheme === 'dark' && (message.isUser ? styles.userTextDark : styles.aiTextDark),
           !isExpanded && message.text.length > 150 && styles.truncatedText
         ]}>
           {isExpanded ? message.text : message.text.slice(0, 150)}
@@ -113,7 +109,7 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
               <MaterialIcons
                 name={isPlaying ? "stop" : "volume-up"}
                 size={20}
-                color={colorScheme === 'dark' ? '#e2e8f0' : '#64748b'}
+                color={kawaii.pastelPalette.text.primary}
               />
             </View>
           </TouchableOpacity>
@@ -125,7 +121,7 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
               onPress={() => handleActionPress(action)}
             >
               <LinearGradient
-                colors={['rgba(59, 130, 246, 0.1)', 'rgba(59, 130, 246, 0.2)']}
+                colors={kawaii.pastelPalette.gradients.skyDream}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.actionGradient}
@@ -133,7 +129,7 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
                 <MaterialIcons
                   name={getActionIcon(action.type)}
                   size={20}
-                  color="#3b82f6"
+                  color={kawaii.pastelPalette.text.primary}
                 />
                 <Text style={styles.actionText}>{action.title}</Text>
                 <View style={styles.pointsBadge}>
@@ -145,25 +141,19 @@ const Message = ({ message, onAudioPlay, onActionPress, colorScheme }) => {
 
           {message.relatedLocations?.length > 0 && (
             <View style={styles.relatedLocations}>
-              <Text style={[
-                styles.relatedTitle,
-                colorScheme === 'dark' && styles.relatedTitleDark
-              ]}>
+              <Text style={styles.relatedTitle}>
                 Nearby Places:
               </Text>
               {message.relatedLocations.map((location, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={[
-                    styles.locationButton,
-                    colorScheme === 'dark' && styles.locationButtonDark
-                  ]}
+                  style={styles.locationButton}
                   onPress={() => handleActionPress({
                     type: 'visit',
                     location,
                   })}
                 >
-                  <MaterialIcons name="place" size={16} color="#3b82f6" />
+                  <MaterialIcons name="place" size={16} color={kawaii.pastelPalette.text.primary} />
                   <Text style={styles.locationText}>{location.title}</Text>
                   <Text style={styles.locationDistance}>{location.distance}</Text>
                 </TouchableOpacity>
@@ -209,7 +199,7 @@ const AIGuideScreen = ({ navigation }) => {
     },
   });
   const [currentLocation, setCurrentLocation] = useState(null);
-  
+
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
   const colorScheme = useColorScheme();
@@ -287,9 +277,9 @@ const AIGuideScreen = ({ navigation }) => {
       };
 
       setMessages(prev => [...prev, aiMessage]);
-      
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
       if (userProfile.accessibility.visualAid) {
         Speech.speak(aiMessage.text, {
           language: userProfile.preferredLanguage,
@@ -361,20 +351,14 @@ const AIGuideScreen = ({ navigation }) => {
 
     return (
       <View style={styles.suggestionsContainer}>
-        <Text style={[
-          styles.suggestionsTitle,
-          colorScheme === 'dark' && styles.suggestionsTextDark
-        ]}>
+        <Text style={styles.suggestionsTitle}>
           Try asking:
         </Text>
         <View style={styles.suggestionButtons}>
           {suggestions.map((suggestion, index) => (
             <TouchableOpacity
               key={index}
-              style={[
-                styles.suggestionButton,
-                colorScheme === 'dark' && styles.suggestionButtonDark
-              ]}
+              style={styles.suggestionButton}
               onPress={() => {
                 setInputText(suggestion.text);
                 inputRef.current?.focus();
@@ -384,7 +368,7 @@ const AIGuideScreen = ({ navigation }) => {
               <MaterialIcons
                 name={suggestion.icon}
                 size={20}
-                color="#3b82f6"
+                color={kawaii.pastelPalette.text.primary}
                 style={styles.suggestionIcon}
               />
               <Text style={styles.suggestionText}>{suggestion.text}</Text>
@@ -397,9 +381,9 @@ const AIGuideScreen = ({ navigation }) => {
 
   return (
     <LinearGradient
-      colors={colorScheme === 'dark' 
-        ? ['#0f172a', '#1e293b']
-        : ['#ffffff', '#f8fafc']
+      colors={
+        kawaii.pastelPalette?.gradients?.skyDream || 
+        ['#F1FAEE', '#45B7D1']
       }
       style={styles.container}
     >
@@ -420,16 +404,10 @@ const AIGuideScreen = ({ navigation }) => {
             showsVerticalScrollIndicator={false}
           />
 
-          <View style={[
-            styles.inputContainer,
-            colorScheme === 'dark' && styles.inputContainerDark
-          ]}>
+          <View style={styles.inputContainer}>
             <TextInput
               ref={inputRef}
-              style={[
-                styles.input,
-                colorScheme === 'dark' && styles.inputDark
-              ]}
+              style={styles.input}
               value={inputText}
               onChangeText={setInputText}
               placeholder="Ask about history around you..."
@@ -440,15 +418,16 @@ const AIGuideScreen = ({ navigation }) => {
               editable={!loading}
             />
             <TouchableOpacity
-              style={[
-                styles.sendButton,
-                loading && styles.sendButtonDisabled
-              ]}
+              style={[styles.sendButton, loading && styles.sendButtonDisabled]}
               onPress={handleSend}
               disabled={loading || !inputText.trim()}
             >
               <LinearGradient
-                colors={loading ? ['#94a3b8', '#64748b'] : ['#3b82f6', '#2563eb']}
+                colors={
+                  loading 
+                    ? ['#94a3b8', '#64748b'] 
+                    : (kawaii.pastelPalette?.gradients?.skyDream || ['#3b82f6', '#2563eb'])
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.sendButtonGradient}
@@ -480,6 +459,7 @@ const getActionIcon = (type) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: kawaii.pastelPalette?.background?.light || '#ffffff',
   },
   keyboardAvoid: {
     flex: 1,
@@ -504,16 +484,10 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
     backgroundColor: '#3b82f6',
   },
-  userBubbleDark: {
-    backgroundColor: '#2563eb',
-  },
   aiBubble: {
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
     backgroundColor: 'rgba(241, 245, 249, 0.95)',
-  },
-  aiBubbleDark: {
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
   },
   aiHeader: {
     flexDirection: 'row',
@@ -534,9 +508,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748b',
   },
-  aiNameDark: {
-    color: '#94a3b8',
-  },
   messageText: {
     fontSize: 16,
     lineHeight: 24,
@@ -547,20 +518,6 @@ const styles = StyleSheet.create({
   aiText: {
     color: '#0f172a',
   },
-  userTextDark: {
-    color: '#ffffff',
-  },
-  aiTextDark: {
-    color: '#e2e8f0',
-  },
-  truncatedText: {
-    marginBottom: 4,
-  },
-  readMoreText: {
-    fontSize: 14,
-    color: '#64748b',
-    fontStyle: 'italic',
-  },
   messageActions: {
     marginTop: 12,
     gap: 8,
@@ -568,17 +525,6 @@ const styles = StyleSheet.create({
   actionButton: {
     borderRadius: 16,
     overflow: 'hidden',
-  },
-  audioButton: {
-    alignSelf: 'flex-start',
-  },
-  audioButtonBackground: {
-    padding: 10,
-    borderRadius: 16,
-    backgroundColor: 'rgba(241, 245, 249, 0.9)',
-  },
-  suggestedAction: {
-    backgroundColor: 'transparent',
   },
   actionGradient: {
     flexDirection: 'row',
@@ -604,41 +550,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  relatedLocations: {
-    marginTop: 12,
-  },
-  relatedTitle: {
-    color: '#64748b',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  relatedTitleDark: {
-    color: '#94a3b8',
-  },
-  locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 6,
-  },
-  locationButtonDark: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-  },
-  locationText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-    marginLeft: 8,
-  },
-  locationDistance: {
-    color: '#64748b',
-    fontSize: 12,
-    marginLeft: 8,
-  },
   inputContainer: {
     flexDirection: 'row',
     padding: 16,
@@ -646,10 +557,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(226, 232, 240, 0.1)',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  inputContainerDark: {
-    borderTopColor: 'rgba(30, 41, 59, 0.5)',
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
   },
   input: {
     flex: 1,
@@ -662,18 +569,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     maxHeight: 100,
   },
-  inputDark: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    color: '#ffffff',
-  },
   sendButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
     overflow: 'hidden',
-  },
-  sendButtonDisabled: {
-    opacity: 0.7,
   },
   sendButtonGradient: {
     flex: 1,
@@ -686,11 +586,7 @@ const styles = StyleSheet.create({
   suggestionsTitle: {
     color: '#64748b',
     fontSize: 14,
-    fontWeight: '600',
     marginBottom: 12,
-  },
-  suggestionsTextDark: {
-    color: '#94a3b8',
   },
   suggestionButtons: {
     gap: 8,
@@ -698,24 +594,19 @@ const styles = StyleSheet.create({
   suggestionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: 'rgba(241, 245, 249, 0.9)',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.2)',
-  },
-  suggestionButtonDark: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: 'rgba(226, 232, 240, 0.1)',
   },
   suggestionIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   suggestionText: {
-    color: '#3b82f6',
+    color: '#0f172a',
     fontSize: 14,
-    fontWeight: '500',
   },
 });
 
