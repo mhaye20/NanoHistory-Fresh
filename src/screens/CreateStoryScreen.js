@@ -25,6 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { createStory, supabase, adminClient, getNearbyLocations } from '../services/supabase';
 import { awardPoints, POINT_VALUES } from '../services/points';
+import { colors, typography, spacing, borderRadius, shadows } from '../theme/kawaii';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_SIZE = (SCREEN_WIDTH - 48) / 3;
@@ -477,44 +478,27 @@ const CreateStoryScreen = ({ route, navigation }) => {
     <BlurView
       intensity={80}
       tint="dark"
-      style={styles.locationSelectModal}
+      style={styles.modalContainer}
     >
-      <View style={styles.locationSelectHeader}>
-        <Text style={styles.locationSelectTitle}>Select Historical Location</Text>
-        <TouchableOpacity
-          onPress={() => setShowLocationSelect(false)}
-          style={styles.closeButton}
-        >
-          <MaterialIcons name="close" size={24} color="#fff" />
-        </TouchableOpacity>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>Select Historical Location</Text>
+        <ScrollView style={styles.locationsList}>
+          {nearbyLocations.map((location) => (
+            <TouchableOpacity
+              key={location.id}
+              style={styles.locationListItem}
+              onPress={() => handleLocationSelect(location)}
+            >
+              <Text style={styles.locationListItemText}>{location.title}</Text>
+            </TouchableOpacity>
+          ))}
+          {nearbyLocations.length === 0 && (
+            <Text style={styles.noLocationsText}>
+              No historical locations found nearby. Please get closer to a historical site to share your story.
+            </Text>
+          )}
+        </ScrollView>
       </View>
-
-      <ScrollView style={styles.locationsList}>
-        {nearbyLocations.map((location) => (
-          <TouchableOpacity
-            key={location.id}
-            style={styles.locationItem}
-            onPress={() => handleLocationSelect(location)}
-          >
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationTitle}>{location.title}</Text>
-              <Text style={styles.locationDistance}>
-                {Math.round(location.distance)} meters away
-              </Text>
-            </View>
-            <MaterialIcons
-              name="chevron-right"
-              size={24}
-              color="#64748b"
-            />
-          </TouchableOpacity>
-        ))}
-        {nearbyLocations.length === 0 && (
-          <Text style={styles.noLocationsText}>
-            No historical locations found nearby. Please get closer to a historical site to share your story.
-          </Text>
-        )}
-      </ScrollView>
     </BlurView>
   );
 
@@ -527,7 +511,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
         <MaterialIcons
           name="location-on"
           size={24}
-          color={selectedLocation ? '#10b981' : '#64748b'}
+          color={selectedLocation ? colors.accent : colors.text.secondary}
         />
         <Text style={[
           styles.locationButtonText,
@@ -539,19 +523,452 @@ const CreateStoryScreen = ({ route, navigation }) => {
       <MaterialIcons
         name="chevron-right"
         size={24}
-        color="#64748b"
+        color={colors.text.secondary}
       />
     </TouchableOpacity>
   );
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background.light,
+      paddingHorizontal: spacing.medium,
+    },
+    keyboardAvoid: {
+      flex: 1,
+    },
+    scrollContainer: {
+      flexGrow: 1,
+      paddingBottom: spacing.xlarge,
+    },
+    scrollContent: {
+      padding: spacing.medium,
+      gap: spacing.medium,
+    },
+    headerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.large,
+      marginBottom: spacing.medium,
+    },
+    headerText: {
+      fontSize: typography.sizes.xlarge,
+      fontWeight: typography.weights.bold,
+      color: colors.text.primary,
+      marginLeft: spacing.small,
+    },
+    pointsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.medium,
+      paddingVertical: spacing.small,
+      borderRadius: borderRadius.medium,
+      backgroundColor: colors.accent + '20',
+      borderWidth: 1,
+      borderColor: colors.accent + '40',
+    },
+    pointsText: {
+      color: colors.accent,
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.semiBold,
+      marginLeft: spacing.small,
+    },
+    inputContainer: {
+      marginBottom: spacing.medium,
+    },
+    label: {
+      fontSize: typography.sizes.small,
+      color: colors.text.secondary,
+      marginBottom: spacing.tiny,
+    },
+    input: {
+      backgroundColor: colors.ui.input,
+      borderColor: colors.ui.inputBorder,
+      borderWidth: 1,
+      borderRadius: borderRadius.medium,
+      paddingHorizontal: spacing.small,
+      paddingVertical: spacing.small,
+      fontSize: typography.sizes.medium,
+      color: colors.text.primary,
+      ...shadows.soft,
+    },
+    titleInput: {
+      fontSize: typography.sizes.large,
+      fontWeight: typography.weights.medium,
+    },
+    storyInput: {
+      minHeight: 120,
+      textAlignVertical: 'top',
+    },
+    tagContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginBottom: spacing.medium,
+    },
+    tagInput: {
+      flex: 1,
+      marginRight: spacing.small,
+    },
+    tag: {
+      backgroundColor: colors.tertiary,
+      borderRadius: borderRadius.rounded,
+      paddingHorizontal: spacing.small,
+      paddingVertical: spacing.tiny,
+      marginRight: spacing.tiny,
+      marginBottom: spacing.tiny,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    tagText: {
+      color: colors.text.primary,
+      fontSize: typography.sizes.small,
+    },
+    imagePickerContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginBottom: spacing.medium,
+    },
+    imagePickerButton: {
+      width: IMAGE_SIZE,
+      height: IMAGE_SIZE,
+      backgroundColor: colors.ui.input,
+      borderRadius: borderRadius.medium,
+      justifyContent: 'center',
+      alignItems: 'center',
+      margin: spacing.tiny,
+      ...shadows.cute,
+    },
+    selectedImage: {
+      width: IMAGE_SIZE,
+      height: IMAGE_SIZE,
+      borderRadius: borderRadius.medium,
+      margin: spacing.tiny,
+    },
+    locationContainer: {
+      backgroundColor: colors.background.mint,
+      borderRadius: borderRadius.medium,
+      padding: spacing.medium,
+      marginBottom: spacing.medium,
+      ...shadows.pastel,
+    },
+    locationText: {
+      fontSize: typography.sizes.medium,
+      color: colors.text.primary,
+    },
+    locationSubtext: {
+      fontSize: typography.sizes.small,
+      color: colors.text.secondary,
+    },
+    submitButton: {
+      backgroundColor: colors.ui.button,
+      borderRadius: borderRadius.medium,
+      paddingVertical: spacing.medium,
+      alignItems: 'center',
+      marginTop: spacing.large,
+      ...shadows.floating,
+    },
+    submitButtonText: {
+      color: colors.ui.buttonText,
+      fontSize: typography.sizes.large,
+      fontWeight: typography.weights.bold,
+    },
+    loadingIndicator: {
+      marginTop: spacing.medium,
+    },
+    errorText: {
+      color: colors.ui.error,
+      fontSize: typography.sizes.small,
+      marginTop: spacing.tiny,
+    },
+    aiSuggestionsContainer: {
+      backgroundColor: colors.background.mint,
+      borderRadius: borderRadius.medium,
+      padding: spacing.medium,
+      marginTop: spacing.medium,
+      ...shadows.dreamy,
+    },
+    aiSuggestionsTitle: {
+      fontSize: typography.sizes.medium,
+      fontWeight: typography.weights.bold,
+      color: colors.text.primary,
+      marginBottom: spacing.small,
+    },
+    accuracyContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: spacing.small,
+    },
+    accuracyText: {
+      fontSize: typography.sizes.small,
+      color: colors.text.secondary,
+      marginLeft: spacing.tiny,
+    },
+    modalContainer: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: colors.ui.card,
+      borderTopLeftRadius: borderRadius.large,
+      borderTopRightRadius: borderRadius.large,
+      padding: spacing.large,
+      maxHeight: '80%',
+    },
+    modalTitle: {
+      fontSize: typography.sizes.large,
+      fontWeight: typography.weights.bold,
+      color: colors.text.primary,
+      marginBottom: spacing.medium,
+      textAlign: 'center',
+    },
+    locationListItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.small,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.ui.inputBorder,
+    },
+    locationListItemText: {
+      fontSize: typography.sizes.medium,
+      color: colors.text.primary,
+      marginLeft: spacing.small,
+    },
+    locationButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.ui.card,
+      borderRadius: borderRadius.medium,
+      padding: spacing.small,
+      marginTop: spacing.small,
+    },
+    locationButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.small,
+    },
+    locationButtonText: {
+      fontSize: typography.sizes.small,
+      color: colors.text.secondary,
+    },
+    locationButtonTextSelected: {
+      color: colors.accent,
+      fontWeight: typography.weights.semiBold,
+    },
+    analyzeButton: {
+      borderRadius: borderRadius.medium,
+      overflow: 'hidden',
+      marginVertical: spacing.small,
+    },
+    analyzeGradient: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.medium,
+      gap: spacing.small,
+    },
+    analyzeButtonText: {
+      color: colors.text.primary,
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.semiBold,
+    },
+    analyzingContainer: {
+      alignItems: 'center',
+      padding: spacing.large,
+    },
+    analyzingText: {
+      color: colors.text.primary,
+      fontSize: typography.sizes.small,
+      marginTop: spacing.small,
+    },
+    improvementsList: {
+      marginTop: spacing.small,
+    },
+    improvementItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.small,
+      backgroundColor: colors.ui.card,
+      padding: spacing.small,
+      borderRadius: borderRadius.medium,
+    },
+    improvementItemTitle: {
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.bold,
+      color: colors.text.primary,
+      marginBottom: spacing.small,
+    },
+    improvementText: {
+      color: colors.text.primary,
+      fontSize: typography.sizes.small,
+      marginLeft: spacing.small,
+      flex: 1,
+    },
+    suggestedTags: {
+      marginTop: spacing.small,
+    },
+    suggestedTagsTitle: {
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.bold,
+      color: colors.text.primary,
+      marginBottom: spacing.small,
+    },
+    tagsList: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.small,
+    },
+    suggestedTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.ui.card,
+      borderRadius: borderRadius.medium,
+      paddingVertical: spacing.small,
+      paddingHorizontal: spacing.small,
+      marginRight: spacing.tiny,
+      marginBottom: spacing.tiny,
+    },
+    suggestedTagText: {
+      color: colors.accent,
+      fontSize: typography.sizes.small,
+      marginLeft: spacing.small,
+    },
+    imagesContainer: {
+      borderRadius: borderRadius.medium,
+      padding: spacing.medium,
+      backgroundColor: colors.ui.card,
+      borderWidth: 1,
+      borderColor: colors.ui.inputBorder,
+    },
+    sectionTitle: {
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.semiBold,
+      color: colors.text.primary,
+      marginBottom: spacing.small,
+    },
+    imageGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.small,
+    },
+    imageWrapper: {
+      width: IMAGE_SIZE,
+      height: IMAGE_SIZE,
+      borderRadius: borderRadius.medium,
+      overflow: 'hidden',
+    },
+    image: {
+      width: '100%',
+      height: '100%',
+    },
+    removeImage: {
+      position: 'absolute',
+      top: spacing.small,
+      right: spacing.small,
+    },
+    removeImageGradient: {
+      borderRadius: borderRadius.medium,
+      padding: spacing.small,
+    },
+    addImage: {
+      width: IMAGE_SIZE,
+      height: IMAGE_SIZE,
+      backgroundColor: colors.ui.card,
+      borderRadius: borderRadius.medium,
+      borderWidth: 2,
+      borderColor: colors.accent,
+      borderStyle: 'dashed',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    addImageText: {
+      color: colors.accent,
+      fontSize: typography.sizes.small,
+      fontWeight: typography.weights.semiBold,
+      marginTop: spacing.small,
+    },
+    tagsContainer: {
+      borderRadius: borderRadius.medium,
+      padding: spacing.medium,
+      backgroundColor: colors.ui.card,
+      borderWidth: 1,
+      borderColor: colors.ui.inputBorder,
+    },
+    tagInput: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.ui.card,
+      borderRadius: borderRadius.medium,
+      marginBottom: spacing.small,
+    },
+    tagTextInput: {
+      flex: 1,
+      padding: spacing.small,
+      color: colors.text.primary,
+      fontSize: typography.sizes.small,
+    },
+    addTagButton: {
+      padding: spacing.small,
+    },
+    addTagButtonDisabled: {
+      opacity: 0.5,
+    },
+    tags: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.small,
+    },
+    tag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.tertiary,
+      borderRadius: borderRadius.rounded,
+      paddingHorizontal: spacing.small,
+      paddingVertical: spacing.tiny,
+      marginRight: spacing.tiny,
+      marginBottom: spacing.tiny,
+      borderWidth: 1,
+      borderColor: colors.accent + '30',
+    },
+    tagText: {
+      color: colors.accent,
+      fontSize: typography.sizes.small,
+      marginRight: spacing.small,
+    },
+    removeTag: {
+      padding: spacing.small,
+    },
+    footer: {
+      padding: spacing.medium,
+      borderTopWidth: 1,
+      borderTopColor: colors.accent + '10',
+      backgroundColor: colors.background.light,
+    },
+    submitButton: {
+      borderRadius: borderRadius.medium,
+      overflow: 'hidden',
+    },
+    submitButtonText: {
+      color: colors.text.primary,
+      fontSize: typography.sizes.medium,
+      fontWeight: typography.weights.bold,
+    },
+    submitGradient: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.medium,
+      gap: spacing.small,
+    },
+    submitButtonDisabled: {
+      opacity: 0.5,
+    },
+  });
+
   return (
-    <LinearGradient
-      colors={colorScheme === 'dark' 
-        ? ['#0f172a', '#1e293b']
-        : ['#ffffff', '#f8fafc']
-      }
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -559,49 +976,29 @@ const CreateStoryScreen = ({ route, navigation }) => {
         >
           <ScrollView
             ref={scrollViewRef}
-            style={styles.scrollView}
+            style={styles.scrollContainer}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <Animated.View
-              style={[
-                styles.header,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
-              <Text style={[
-                styles.title,
-                colorScheme === 'dark' && styles.titleDark
-              ]}>
-                Share Your Story
-              </Text>
+            <View style={styles.headerContainer}>
+              <Text style={styles.headerText}>Share Your Story</Text>
               <View style={styles.pointsContainer}>
-                <MaterialIcons name="stars" size={24} color="#fbbf24" />
+                <MaterialIcons name="stars" size={24} color={colors.accent} />
                 <Text style={styles.pointsText}>
                   {points} points
                 </Text>
               </View>
-            </Animated.View>
+            </View>
 
-            <Animated.View
-              style={[
-                styles.formContainer,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Title</Text>
               <TextInput
                 style={[
-                  styles.titleInput,
-                  colorScheme === 'dark' && styles.titleInputDark
+                  styles.input,
+                  styles.titleInput
                 ]}
                 placeholder="Give your story a title..."
-                placeholderTextColor="#64748b"
+                placeholderTextColor={colors.text.secondary}
                 value={title}
                 onChangeText={(text) => {
                   setTitle(text);
@@ -609,16 +1006,17 @@ const CreateStoryScreen = ({ route, navigation }) => {
                 }}
                 maxLength={100}
               />
+            </View>
 
-              <LocationButton />
-
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Story</Text>
               <TextInput
                 style={[
-                  styles.storyInput,
-                  colorScheme === 'dark' && styles.storyInputDark
+                  styles.input,
+                  styles.storyInput
                 ]}
                 placeholder="Share your historical discovery or local story..."
-                placeholderTextColor="#64748b"
+                placeholderTextColor={colors.text.secondary}
                 value={story}
                 onChangeText={(text) => {
                   setStory(text);
@@ -627,7 +1025,12 @@ const CreateStoryScreen = ({ route, navigation }) => {
                 multiline
                 maxLength={2000}
               />
-            </Animated.View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Location</Text>
+              <LocationButton />
+            </View>
 
             {story.length > 50 && !isAnalyzing && !aiSuggestions && (
               <TouchableOpacity
@@ -650,65 +1053,30 @@ const CreateStoryScreen = ({ route, navigation }) => {
 
             {isAnalyzing && (
               <View style={styles.analyzingContainer}>
-                <ActivityIndicator color="#3b82f6" size="large" />
-                <Text style={[
-                  styles.analyzingText,
-                  colorScheme === 'dark' && styles.analyzingTextDark
-                ]}>
+                <ActivityIndicator color={colors.accent} size="large" />
+                <Text style={styles.analyzingText}>
                   Analyzing your story...
                 </Text>
               </View>
             )}
 
             {aiSuggestions && (
-              <View style={styles.suggestionsContainer}>
+              <View style={styles.aiSuggestionsContainer}>
+                <Text style={styles.aiSuggestionsTitle}>AI Suggestions</Text>
                 <View style={styles.accuracyContainer}>
-                  <Text style={styles.accuracyLabel}>Historical Accuracy</Text>
-                  <View style={styles.accuracyBar}>
-                    <Animated.View
-                      style={[
-                        styles.accuracyFill,
-                        {
-                          width: accuracyAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0%', '100%']
-                          })
-                        }
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.accuracyValue}>
-                    {Math.round(aiSuggestions.historicalAccuracy * 100)}%
-                  </Text>
+                  <Text style={styles.accuracyText}>Historical Accuracy: {Math.round(aiSuggestions.historicalAccuracy * 100)}%</Text>
                 </View>
-
                 <View style={styles.improvementsList}>
-                  <Text style={[
-                    styles.suggestionsTitle,
-                    colorScheme === 'dark' && styles.suggestionsTitleDark
-                  ]}>
-                    Suggested Improvements
-                  </Text>
+                  <Text style={styles.improvementItemTitle}>Suggested Improvements</Text>
                   {aiSuggestions.improvements.map((improvement, index) => (
                     <View key={index} style={styles.improvementItem}>
-                      <MaterialIcons name="lightbulb" size={20} color="#3b82f6" />
-                      <Text style={[
-                        styles.improvementText,
-                        colorScheme === 'dark' && styles.improvementTextDark
-                      ]}>
-                        {improvement}
-                      </Text>
+                      <MaterialIcons name="lightbulb" size={20} color={colors.accent} />
+                      <Text style={styles.improvementText}>{improvement}</Text>
                     </View>
                   ))}
                 </View>
-
                 <View style={styles.suggestedTags}>
-                  <Text style={[
-                    styles.suggestionsTitle,
-                    colorScheme === 'dark' && styles.suggestionsTitleDark
-                  ]}>
-                    Suggested Tags
-                  </Text>
+                  <Text style={styles.suggestedTagsTitle}>Suggested Tags</Text>
                   <View style={styles.tagsList}>
                     {aiSuggestions.suggestedTags.map((tag, index) => (
                       <TouchableOpacity
@@ -722,7 +1090,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
                           }
                         }}
                       >
-                        <MaterialIcons name="add" size={20} color="#3b82f6" />
+                        <MaterialIcons name="add" size={20} color={colors.accent} />
                         <Text style={styles.suggestedTagText}>{tag}</Text>
                       </TouchableOpacity>
                     ))}
@@ -732,53 +1100,33 @@ const CreateStoryScreen = ({ route, navigation }) => {
             )}
 
             <View style={styles.imagesContainer}>
-              <Text style={[
-                styles.sectionTitle,
-                colorScheme === 'dark' && styles.sectionTitleDark
-              ]}>
-                Photos
-              </Text>
-              <View style={styles.imageGrid}>
+              <Text style={styles.sectionTitle}>Photos</Text>
+              <View style={styles.imagePickerContainer}>
                 {images.map((uri, index) => (
-                  <View key={index} style={styles.imageWrapper}>
-                    <Image source={{ uri }} style={styles.image} />
-                    <TouchableOpacity
-                      style={styles.removeImage}
-                      onPress={() => removeImage(index)}
-                    >
-                      <LinearGradient
-                        colors={['rgba(0,0,0,0.5)', 'rgba(0,0,0,0.7)']}
-                        style={styles.removeImageGradient}
-                      >
-                        <MaterialIcons name="close" size={20} color="#ffffff" />
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
+                  <Image
+                    key={index}
+                    source={{ uri }}
+                    style={styles.selectedImage}
+                  />
                 ))}
                 {images.length < 5 && (
-                  <TouchableOpacity style={styles.addImage} onPress={pickImage}>
-                    <MaterialIcons name="add-photo-alternate" size={32} color="#3b82f6" />
-                    <Text style={styles.addImageText}>Add Photo</Text>
+                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
+                    <MaterialIcons name="add-photo-alternate" size={32} color={colors.accent} />
                   </TouchableOpacity>
                 )}
               </View>
             </View>
 
             <View style={styles.tagsContainer}>
-              <Text style={[
-                styles.sectionTitle,
-                colorScheme === 'dark' && styles.sectionTitleDark
-              ]}>
-                Tags
-              </Text>
+              <Text style={styles.sectionTitle}>Tags</Text>
               <View style={styles.tagInput}>
                 <TextInput
                   style={[
-                    styles.tagTextInput,
-                    colorScheme === 'dark' && styles.tagTextInputDark
+                    styles.input,
+                    styles.tagInput
                   ]}
                   placeholder="Add tags (e.g., architecture, 1800s)..."
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={colors.text.secondary}
                   value={tagInput}
                   onChangeText={setTagInput}
                   onSubmitEditing={addTag}
@@ -795,7 +1143,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
                   <MaterialIcons
                     name="add"
                     size={24}
-                    color={tagInput.trim() ? '#3b82f6' : '#64748b'}
+                    color={tagInput.trim() ? colors.accent : colors.text.secondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -807,7 +1155,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
                       onPress={() => removeTag(index)}
                       style={styles.removeTag}
                     >
-                      <MaterialIcons name="close" size={16} color="#64748b" />
+                      <MaterialIcons name="close" size={16} color={colors.text.secondary} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -815,10 +1163,7 @@ const CreateStoryScreen = ({ route, navigation }) => {
             </View>
           </ScrollView>
 
-          <View style={[
-            styles.footer,
-            colorScheme === 'dark' && styles.footerDark
-          ]}>
+          <View style={styles.footer}>
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -847,417 +1192,8 @@ const CreateStoryScreen = ({ route, navigation }) => {
         </KeyboardAvoidingView>
       </SafeAreaView>
       {showLocationSelect && <LocationSelectModal />}
-    </LinearGradient>
+    </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardAvoid: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  titleDark: {
-    color: '#ffffff',
-  },
-  pointsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
-  },
-  pointsText: {
-    color: '#fbbf24',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  formContainer: {
-    borderRadius: 20,
-    padding: 16,
-    gap: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  titleInput: {
-    fontSize: 20,
-    color: '#0f172a',
-    fontWeight: '600',
-    padding: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: 12,
-  },
-  titleInputDark: {
-    color: '#ffffff',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-  },
-  locationButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  locationButtonText: {
-    fontSize: 16,
-    color: '#64748b',
-  },
-  locationButtonTextSelected: {
-    color: '#10b981',
-    fontWeight: '600',
-  },
-  locationSelectModal: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: 20,
-  },
-  locationSelectHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  locationSelectTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  closeButton: {
-    padding: 8,
-  },
-  locationsList: {
-    flex: 1,
-  },
-  locationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  locationInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  locationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  locationDistance: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  noLocationsText: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center',
-    marginTop: 20,
-  },
-  storyInput: {
-    fontSize: 16,
-    color: '#0f172a',
-    minHeight: 200,
-    textAlignVertical: 'top',
-    lineHeight: 24,
-    padding: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: 12,
-  },
-  storyInputDark: {
-    color: '#ffffff',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  analyzeButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginVertical: 8,
-  },
-  analyzeGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  analyzeButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  analyzingContainer: {
-    alignItems: 'center',
-    padding: 24,
-  },
-  analyzingText: {
-    color: '#0f172a',
-    fontSize: 16,
-    marginTop: 12,
-  },
-  analyzingTextDark: {
-    color: '#e2e8f0',
-  },
-  suggestionsContainer: {
-    borderRadius: 20,
-    padding: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  accuracyContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  accuracyLabel: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 12,
-  },
-  accuracyBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  accuracyFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-    borderRadius: 4,
-  },
-  accuracyValue: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 12,
-  },
-  improvementsList: {
-    marginTop: 16,
-  },
-  improvementItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    padding: 12,
-    borderRadius: 12,
-  },
-  improvementText: {
-    color: '#0f172a',
-    fontSize: 14,
-    marginLeft: 12,
-    flex: 1,
-  },
-  improvementTextDark: {
-    color: '#e2e8f0',
-  },
-  suggestedTags: {
-    marginTop: 16,
-  },
-  suggestionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
-  suggestionsTitleDark: {
-    color: '#e2e8f0',
-  },
-  tagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  suggestedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  suggestedTagText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    marginLeft: 4,
-  },
-  imagesContainer: {
-    borderRadius: 20,
-    padding: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
-  sectionTitleDark: {
-    color: '#ffffff',
-  },
-  imageGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  imageWrapper: {
-    width: IMAGE_SIZE,
-    height: IMAGE_SIZE,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  removeImage: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  removeImageGradient: {
-    borderRadius: 12,
-    padding: 4,
-  },
-  addImage: {
-    width: IMAGE_SIZE,
-    height: IMAGE_SIZE,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addImageText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 8,
-  },
-  tagsContainer: {
-    borderRadius: 20,
-    padding: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  tagInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  tagTextInput: {
-    flex: 1,
-    padding: 12,
-    color: '#0f172a',
-    fontSize: 16,
-  },
-  tagTextInputDark: {
-    color: '#ffffff',
-  },
-  addTagButton: {
-    padding: 8,
-  },
-  addTagButtonDisabled: {
-    opacity: 0.5,
-  },
-  tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
-  },
-  tagText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    marginRight: 4,
-  },
-  removeTag: {
-    padding: 2,
-  },
-  footer: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(226, 232, 240, 0.1)',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  footerDark: {
-    borderTopColor: 'rgba(30, 41, 59, 0.5)',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-  },
-  submitButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  submitButtonDisabled: {
-    opacity: 0.7,
-  },
-  submitGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  submitButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-});
 
 export default CreateStoryScreen;

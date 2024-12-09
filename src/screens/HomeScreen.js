@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { BlurView } from 'expo-blur';
 import { MaterialIcons } from '@expo/vector-icons';
 import { kawaii } from '../theme/kawaii';
 import { MotiView } from 'moti';
+import Carousel from 'react-native-reanimated-carousel';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -220,11 +221,64 @@ const KawaiiButton = ({ onPress, style, gradientColors, icon, label, size = 'nor
   );
 };
 
+const DAILY_HISTORY_FACTS = [
+  {
+    id: '1',
+    fact: 'The Great Wall of China is over 13,000 miles long and took more than 2,000 years to build.',
+    icon: 'terrain',
+    color: kawaii.pastelPalette.gradients.skyDream[0],
+  },
+  {
+    id: '2',
+    fact: 'The first computer programmer was Ada Lovelace, who wrote algorithms for Charles Babbage\'s Analytical Engine in the 1840s.',
+    icon: 'computer',
+    color: kawaii.pastelPalette.gradients.mintFresh[0],
+  },
+  {
+    id: '3',
+    fact: 'The Rosetta Stone, discovered in 1799, was key to deciphering Egyptian hieroglyphs by providing the same text in three different scripts.',
+    icon: 'language',
+    color: kawaii.pastelPalette.gradients.lavenderDream[0],
+  },
+  {
+    id: '4',
+    fact: 'The shortest war in history was between Britain and Zanzibar in 1896, lasting just 38 minutes.',
+    icon: 'timer',
+    color: kawaii.pastelPalette.gradients.sunsetGlow[0],
+  },
+];
+
+const HistoryFactCard = ({ fact, icon, color }) => (
+  <MotiView
+    from={{ opacity: 0, scale: 0.9 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ type: 'timing', duration: 500 }}
+    style={styles.historyFactCard}
+  >
+    <LinearGradient
+      colors={[color, color + '80']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.historyFactCardGradient}
+    >
+      <MaterialIcons 
+        name={icon} 
+        size={32} 
+        color={kawaii.pastelPalette.text.primary} 
+        style={styles.historyFactIcon}
+      />
+      <Text style={styles.historyFactText}>{fact}</Text>
+    </LinearGradient>
+  </MotiView>
+);
+
 const HomeScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const mascotBounceAnim = useRef(new Animated.Value(0)).current;
   const mascotWobbleAnim = useRef(new Animated.Value(0)).current;
+  const carouselRef = useRef(null);
+  const [currentFactIndex, setCurrentFactIndex] = useState(0);
 
   useEffect(() => {
     Animated.parallel([
@@ -392,6 +446,39 @@ const HomeScreen = ({ navigation }) => {
                       navigation.navigate('TourGuide');
                     }}
                   />
+                </View>
+              </View>
+
+              <View style={styles.historyFactCarouselContainer}>
+                <Text style={styles.historyFactTitle}>Daily History Fact</Text>
+                <Carousel
+                  ref={carouselRef}
+                  width={SCREEN_WIDTH * 0.9}
+                  height={SCREEN_HEIGHT * 0.2}
+                  data={DAILY_HISTORY_FACTS}
+                  renderItem={({ item }) => (
+                    <HistoryFactCard 
+                      fact={item.fact} 
+                      icon={item.icon} 
+                      color={item.color} 
+                    />
+                  )}
+                  onSnapToItem={(index) => setCurrentFactIndex(index)}
+                  autoPlay={true}
+                  autoPlayInterval={5000}
+                  scrollAnimationDuration={1000}
+                />
+                {/* Pagination Dots */}
+                <View style={styles.carouselPaginationContainer}>
+                  {DAILY_HISTORY_FACTS.map((_, index) => (
+                    <View 
+                      key={index} 
+                      style={[
+                        styles.carouselPaginationDot, 
+                        index === currentFactIndex && styles.carouselPaginationDotActive
+                      ]} 
+                    />
+                  ))}
                 </View>
               </View>
 
@@ -580,6 +667,53 @@ const styles = StyleSheet.create({
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
+  },
+  historyFactCarouselContainer: {
+    width: '100%',
+    paddingHorizontal: kawaii.gentleSpacing.medium,
+    marginBottom: kawaii.gentleSpacing.xlarge,
+  },
+  historyFactTitle: {
+    fontSize: kawaii.playfulTypography.sizes.medium,
+    color: kawaii.pastelPalette.text.primary,
+    fontWeight: kawaii.playfulTypography.weights.bold,
+    marginBottom: kawaii.gentleSpacing.small,
+  },
+  historyFactCard: {
+    width: '100%',
+    height: '100%',
+    borderRadius: kawaii.cornerRadius,
+    overflow: 'hidden',
+  },
+  historyFactCardGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: kawaii.gentleSpacing.large,
+  },
+  historyFactIcon: {
+    marginBottom: kawaii.gentleSpacing.small,
+  },
+  historyFactText: {
+    fontSize: kawaii.playfulTypography.sizes.small,
+    color: kawaii.pastelPalette.text.primary,
+    textAlign: 'center',
+  },
+  carouselPaginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: kawaii.gentleSpacing.small,
+  },
+  carouselPaginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: kawaii.pastelPalette.text.primary + '20',
+    marginHorizontal: 4,
+  },
+  carouselPaginationDotActive: {
+    backgroundColor: kawaii.pastelPalette.text.primary,
   },
 });
 
