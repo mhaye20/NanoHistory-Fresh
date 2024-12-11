@@ -24,6 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { getAIResponse, generateVoice } from '../services/ai';
 import * as Location from 'expo-location';
 import { kawaii } from '../theme/kawaii';
+import { ScrollView } from 'react-native-gesture-handler';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -334,60 +335,78 @@ const AIGuideScreen = ({ navigation }) => {
       {
         text: "Tell me about historical sites nearby",
         icon: "place",
+        gradient: kawaii.pastelPalette.gradients.oceanBreeze,
       },
       {
         text: "What happened here in the past?",
         icon: "history",
+        gradient: kawaii.pastelPalette.gradients.skyDream,
       },
       {
         text: "Create a personalized history tour",
         icon: "map",
+        gradient: kawaii.pastelPalette.gradients.greenWhisper,
       },
       {
         text: "Show me interesting facts about this area",
         icon: "info",
+        gradient: kawaii.pastelPalette.gradients.sunsetGlow,
       },
     ];
 
     return (
       <View style={styles.suggestionsContainer}>
-        <Text style={styles.suggestionsTitle}>
-          Try asking:
+        <Text style={[styles.suggestionsTitle, { color: kawaii.pastelPalette.text.accent }]}>
+          What would you like to explore?
         </Text>
-        <View style={styles.suggestionButtons}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.suggestionsScrollView}
+        >
           {suggestions.map((suggestion, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.suggestionButton}
+            <TouchableOpacity 
+              key={index} 
+              style={styles.suggestionCard}
               onPress={() => {
-                setInputText(suggestion.text);
-                inputRef.current?.focus();
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setInputText(suggestion.text);
               }}
             >
-              <MaterialIcons
-                name={suggestion.icon}
-                size={20}
-                color={kawaii.pastelPalette.text.primary}
-                style={styles.suggestionIcon}
-              />
-              <Text style={styles.suggestionText}>{suggestion.text}</Text>
+              <LinearGradient
+                colors={suggestion.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.suggestionGradient}
+              >
+                <MaterialIcons 
+                  name={suggestion.icon} 
+                  size={24} 
+                  color={kawaii.pastelPalette.text.primary} 
+                />
+                <Text style={styles.suggestionText}>
+                  {suggestion.text}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
     );
   };
 
   return (
     <LinearGradient
-      colors={
-        kawaii.pastelPalette?.gradients?.skyDream || 
-        ['#F1FAEE', '#45B7D1']
-      }
+      colors={[
+        kawaii.pastelPalette.background.light,
+        kawaii.pastelPalette.background.mint,
+        kawaii.pastelPalette.background.peach,
+      ]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
       style={styles.container}
     >
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.content}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoid}
@@ -397,45 +416,44 @@ const AIGuideScreen = ({ navigation }) => {
             data={messages}
             renderItem={renderMessage}
             keyExtractor={item => item.id}
-            contentContainerStyle={styles.messageList}
+            contentContainerStyle={styles.messagesContainer}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
             onLayout={() => flatListRef.current?.scrollToEnd()}
             ListHeaderComponent={messages.length === 1 ? renderSuggestions : null}
-            showsVerticalScrollIndicator={false}
           />
-
           <View style={styles.inputContainer}>
             <TextInput
               ref={inputRef}
               style={styles.input}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Ask about history around you..."
-              placeholderTextColor="#64748b"
+              placeholder="Ask me about history..."
+              placeholderTextColor={kawaii.pastelPalette.text.secondary}
               multiline
               maxLength={500}
-              onSubmitEditing={handleSend}
-              editable={!loading}
             />
             <TouchableOpacity
-              style={[styles.sendButton, loading && styles.sendButtonDisabled]}
+              style={styles.sendButton}
               onPress={handleSend}
-              disabled={loading || !inputText.trim()}
+              disabled={loading}
             >
               <LinearGradient
-                colors={
-                  loading 
-                    ? ['#94a3b8', '#64748b'] 
-                    : (kawaii.pastelPalette?.gradients?.skyDream || ['#3b82f6', '#2563eb'])
-                }
+                colors={kawaii.pastelPalette.gradients.skyDream}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.sendButtonGradient}
               >
                 {loading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator 
+                    size="small" 
+                    color={kawaii.pastelPalette.text.primary} 
+                  />
                 ) : (
-                  <MaterialIcons name="send" size={24} color="#ffffff" />
+                  <MaterialIcons
+                    name="send"
+                    size={24}
+                    color={kawaii.pastelPalette.text.primary}
+                  />
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -459,154 +477,197 @@ const getActionIcon = (type) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: kawaii.pastelPalette?.background?.light || '#ffffff',
+    backgroundColor: kawaii.pastelPalette.background.light,
+    paddingTop: kawaii.spacing.medium,
   },
-  keyboardAvoid: {
+  content: {
     flex: 1,
+    paddingHorizontal: kawaii.spacing.medium,
   },
-  messageList: {
-    padding: 16,
-    paddingBottom: 8,
+  messagesContainer: {
+    flex: 1,
+    paddingBottom: kawaii.spacing.large,
   },
   messageBubble: {
-    maxWidth: '85%',
-    padding: 16,
-    borderRadius: 20,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    marginBottom: kawaii.spacing.small,
+    borderRadius: kawaii.borderRadius.medium,
+    padding: kawaii.spacing.medium,
+    ...kawaii.shadows.soft,
   },
   userBubble: {
+    backgroundColor: kawaii.pastelPalette.ui.input,
     alignSelf: 'flex-end',
-    borderBottomRightRadius: 4,
-    backgroundColor: '#3b82f6',
+    maxWidth: '85%',
   },
   aiBubble: {
+    backgroundColor: kawaii.pastelPalette.ui.card,
     alignSelf: 'flex-start',
-    borderBottomLeftRadius: 4,
-    backgroundColor: 'rgba(241, 245, 249, 0.95)',
-  },
-  aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    borderRadius: 16,
-    padding: 8,
-    backgroundColor: 'rgba(241, 245, 249, 0.5)',
-  },
-  aiAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  aiName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
+    maxWidth: '85%',
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 24,
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.medium,
+    color: kawaii.pastelPalette.text.primary,
   },
   userText: {
-    color: '#ffffff',
+    textAlign: 'right',
   },
   aiText: {
-    color: '#0f172a',
-  },
-  messageActions: {
-    marginTop: 12,
-    gap: 8,
-  },
-  actionButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  actionGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-  },
-  actionText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-    flex: 1,
-  },
-  pointsBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(241, 245, 249, 0.9)',
-  },
-  pointsText: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '600',
+    textAlign: 'left',
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(226, 232, 240, 0.1)',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    alignItems: 'center',
+    backgroundColor: kawaii.pastelPalette.ui.input,
+    borderRadius: kawaii.borderRadius.large,
+    paddingHorizontal: kawaii.spacing.medium,
+    paddingVertical: kawaii.spacing.small,
+    marginBottom: kawaii.spacing.medium,
+    ...kawaii.shadows.cute,
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(241, 245, 249, 0.9)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 8,
-    color: '#0f172a',
-    fontSize: 16,
-    maxHeight: 100,
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.medium,
+    color: kawaii.pastelPalette.text.primary,
+    marginRight: kawaii.spacing.small,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
+    backgroundColor: kawaii.pastelPalette.ui.button,
+    borderRadius: kawaii.borderRadius.rounded,
+    padding: kawaii.spacing.tiny,
   },
   sendButtonGradient: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  suggestionsContainer: {
-    marginBottom: 24,
-  },
-  suggestionsTitle: {
-    color: '#64748b',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  suggestionButtons: {
-    gap: 8,
-  },
-  suggestionButton: {
+  aiHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(241, 245, 249, 0.9)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.1)',
+    marginBottom: kawaii.spacing.small,
   },
-  suggestionIcon: {
-    marginRight: 8,
+  aiAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: kawaii.borderRadius.rounded,
+    marginRight: kawaii.spacing.small,
+  },
+  aiName: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.medium,
+    fontWeight: kawaii.typography.weights.medium,
+    color: kawaii.pastelPalette.text.accent,
+  },
+  actionButton: {
+    marginTop: kawaii.spacing.small,
+    borderRadius: kawaii.borderRadius.medium,
+    overflow: 'hidden',
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: kawaii.spacing.small,
+    justifyContent: 'space-between',
+  },
+  actionText: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.small,
+    color: kawaii.pastelPalette.text.primary,
+    marginLeft: kawaii.spacing.tiny,
+  },
+  pointsBadge: {
+    backgroundColor: kawaii.pastelPalette.accent,
+    borderRadius: kawaii.borderRadius.rounded,
+    paddingHorizontal: kawaii.spacing.tiny,
+    paddingVertical: kawaii.spacing.micro,
+  },
+  pointsText: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.tiny,
+    color: kawaii.pastelPalette.text.primary,
+  },
+  suggestedAction: {
+    marginBottom: kawaii.spacing.tiny,
+  },
+  relatedLocations: {
+    marginTop: kawaii.spacing.small,
+    backgroundColor: kawaii.pastelPalette.background.mint,
+    borderRadius: kawaii.borderRadius.medium,
+    padding: kawaii.spacing.small,
+    ...kawaii.shadows.dreamy,
+  },
+  relatedTitle: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.small,
+    color: kawaii.pastelPalette.text.accent,
+    marginBottom: kawaii.spacing.tiny,
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: kawaii.spacing.tiny,
+  },
+  locationText: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.small,
+    color: kawaii.pastelPalette.text.primary,
+    marginLeft: kawaii.spacing.tiny,
+  },
+  locationDistance: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.tiny,
+    color: kawaii.pastelPalette.text.secondary,
+    marginLeft: 'auto',
+  },
+  truncatedText: {
+    maxHeight: 100,
+  },
+  readMoreText: {
+    color: kawaii.pastelPalette.text.accent,
+    fontStyle: 'italic',
+  },
+  audioButton: {
+    marginBottom: kawaii.spacing.tiny,
+  },
+  audioButtonBackground: {
+    backgroundColor: kawaii.pastelPalette.ui.input,
+    borderRadius: kawaii.borderRadius.rounded,
+    padding: kawaii.spacing.small,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionsContainer: {
+    marginBottom: kawaii.spacing.large,
+    paddingHorizontal: kawaii.spacing.small,
+  },
+  suggestionsTitle: {
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.medium,
+    color: kawaii.pastelPalette.text.accent,
+    marginBottom: kawaii.spacing.small,
+  },
+  suggestionsScrollView: {
+    paddingVertical: kawaii.spacing.small,
+  },
+  suggestionCard: {
+    marginRight: kawaii.spacing.medium,
+    backgroundColor: kawaii.pastelPalette.background.light,
+    borderRadius: kawaii.borderRadius.medium,
+    ...kawaii.shadows.cute,
+  },
+  suggestionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: kawaii.spacing.small,
+    borderRadius: kawaii.borderRadius.medium,
   },
   suggestionText: {
-    color: '#0f172a',
-    fontSize: 14,
+    fontFamily: kawaii.typography.fontFamily,
+    fontSize: kawaii.typography.sizes.small,
+    color: kawaii.pastelPalette.text.primary,
+    marginLeft: kawaii.spacing.small,
+    maxWidth: 200,
   },
 });
 

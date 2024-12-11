@@ -755,7 +755,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: kawaii.gentleSpacing.medium,
+    marginVertical: kawaii.gentleSpacing.xlarge,
   },
   historyFactSwiperWrapper: {
     width: SCREEN_WIDTH * 0.9,
