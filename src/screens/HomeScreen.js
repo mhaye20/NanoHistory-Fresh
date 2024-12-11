@@ -86,20 +86,30 @@ const BackgroundPattern = () => {
 };
 
 const Sparkle = ({ delay = 0, size = 4 }) => (
-  <View
-    style={[
-      styles.sparkle, 
-      { 
-        width: size, 
-        height: size, 
-        backgroundColor: 'rgba(255,255,255,0.3)', 
-        borderRadius: size / 2 
-      }
-    ]}
+  <MotiView
+    style={[styles.sparkle, { width: size, height: size }]}
+    from={{
+      opacity: 0,
+      scale: 0,
+      translateX: 0,
+      translateY: 0,
+    }}
+    animate={{
+      opacity: [0, 1, 0],
+      scale: [0, 1, 0],
+      translateX: [-10, 10, -10],
+      translateY: [-10, 10, -10],
+    }}
+    transition={{
+      type: 'timing',
+      duration: 2000,
+      delay,
+      loop: true,
+    }}
   />
 );
 
-const KawaiiButton = ({ onPress, style, gradientColors, icon, label, size = 'normal', sparkles = false }) => {
+const KawaiiButton = ({ onPress, style, gradientColors, icon, label, size = 'normal', sparkles = true }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
@@ -190,14 +200,19 @@ const KawaiiButton = ({ onPress, style, gradientColors, icon, label, size = 'nor
                 color={kawaii.pastelPalette.text.primary} 
               />
               {sparkles && (
-                <View style={styles.sparkleContainer}>
-                  <Sparkle size={4} delay={0} />
-                  <Sparkle size={6} delay={500} />
-                  <Sparkle size={4} delay={1000} />
+                <View style={styles.sparklesContainer}>
+                  <Sparkle delay={0} />
+                  <Sparkle delay={400} size={6} />
+                  <Sparkle delay={800} size={3} />
                 </View>
               )}
             </View>
-            {label && <Text style={styles.kawaiiButtonLabel}>{label}</Text>}
+            <Text style={[
+              styles.kawaiiButtonText,
+              size === 'large' && styles.kawaiiButtonTextLarge
+            ]}>
+              {label}
+            </Text>
           </BlurView>
         </LinearGradient>
       </Animated.View>
@@ -276,32 +291,17 @@ const HistoryFactCarousel = ({ facts }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef(null);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const interval = setInterval(() => {
-      // Fade out before changing
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
-        const nextIndex = (currentIndex + 1) % facts.length;
-        flatListRef.current?.scrollToIndex({ 
-          index: nextIndex, 
-          animated: true,
-          viewPosition: 0.5 
-        });
-        setCurrentIndex(nextIndex);
-
-        // Fade in after changing
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
+      const nextIndex = (currentIndex + 1) % facts.length;
+      flatListRef.current?.scrollToIndex({ 
+        index: nextIndex, 
+        animated: true,
+        viewPosition: 0.5 
       });
-    }, 8000); // Increased interval to 8 seconds
+      setCurrentIndex(nextIndex);
+    }, 5000); // Change fact every 5 seconds
 
     return () => clearInterval(interval);
   }, [currentIndex, facts.length]);
@@ -352,11 +352,11 @@ const HistoryFactCarousel = ({ facts }) => {
           contentContainerStyle={styles.historyFactListContainer}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item, index }) => (
-            <Animated.View 
+            <View 
               style={[
                 styles.historyFactSlide, 
                 { 
-                  opacity: fadeAnim,
+                  opacity: index === currentIndex ? 1 : 0.1,
                   width: SCREEN_WIDTH * 0.9 
                 }
               ]}
@@ -366,7 +366,7 @@ const HistoryFactCarousel = ({ facts }) => {
                 icon={item.icon} 
                 color={item.color} 
               />
-            </Animated.View>
+            </View>
           )}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 2,
   },
-  sparkleContainer: {
+  sparklesContainer: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
   },
